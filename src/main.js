@@ -79,15 +79,29 @@ async function init() {
       Cesium.Ion.defaultAccessToken = cesiumToken;
     }
 
-    // Set Google Maps API key for 3D Tiles
+    // Set Google Maps API key for 3D Tiles.
+    // The sentinel value 'ion' routes Photorealistic 3D Tiles through the
+    // Cesium ion token instead of a direct Google Maps key:
+    // createGooglePhotorealistic3DTileset falls back to ion asset 2275207
+    // whenever GoogleMaps.defaultApiKey is left undefined. Requires
+    // CESIUM_ION_TOKEN with the assets:read scope, and consumes the ion
+    // account's "Google Photorealistic 3D Tiles" root-tile allowance rather
+    // than a Google Cloud billing account. Google geocoding (search,
+    // annotation boundary resolution) stays unavailable in this mode.
     const googleApiKey = import.meta.env.GOOGLE_MAPS_API_KEY;
     if (!googleApiKey) {
       throw new Error('GOOGLE_MAPS_API_KEY not found. Set it as an environment variable.');
     }
-    Cesium.GoogleMaps.defaultApiKey = googleApiKey;
+    const routeGoogleTilesViaIon = googleApiKey === 'ion';
+    if (routeGoogleTilesViaIon && !cesiumToken) {
+      throw new Error('GOOGLE_MAPS_API_KEY=ion requires CESIUM_ION_TOKEN to be set.');
+    }
+    if (!routeGoogleTilesViaIon) {
+      Cesium.GoogleMaps.defaultApiKey = googleApiKey;
 
-    // Expose API key globally for geocoding in locations.js
-    window.__GOOGLE_MAPS_API_KEY__ = googleApiKey;
+      // Expose API key globally for geocoding in locations.js
+      window.__GOOGLE_MAPS_API_KEY__ = googleApiKey;
+    }
 
     // Create the Cesium viewer with minimal chrome
     const viewer = new Cesium.Viewer('cesiumContainer', {
