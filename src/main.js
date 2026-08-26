@@ -157,9 +157,21 @@ async function init() {
     let tileset = null;
     try {
       // Load Google Photorealistic 3D Tiles
-      tileset = await Cesium.createGooglePhotorealistic3DTileset({
-        onlyUsingWithGoogleGeocoder: true,
-      });
+      // Cache ceiling override (stability, not tuning): this machine's Chrome
+      // runs with exit_on_context_lost and ANGLE loseContextOnOutOfMemory, so
+      // VRAM exhaustion terminates the GPU process rather than degrading.
+      // createGooglePhotorealistic3DTileset otherwise presets cacheBytes to
+      // 1536 MB with 1024 MB of overflow headroom — a 2.5 GB ceiling against
+      // 6 GB of VRAM shared with MSAA render targets and the desktop.
+      // Re-fetching evicted tiles costs bandwidth only: the Map Tiles API
+      // bills the root tileset request, not individual tile fetches.
+      tileset = await Cesium.createGooglePhotorealistic3DTileset(
+        { onlyUsingWithGoogleGeocoder: true },
+        {
+          cacheBytes: 512 * 1024 * 1024,
+          maximumCacheOverflowBytes: 256 * 1024 * 1024,
+        },
+      );
       viewer.scene.primitives.add(tileset);
       // NOTE: Cesium World Terrain intentionally disabled — conflicts with Google 3D Tiles at high zoom.
       // Google Photorealistic 3D Tiles provide their own terrain/elevation.
