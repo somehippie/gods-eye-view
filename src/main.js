@@ -242,6 +242,9 @@ async function init() {
     // Restoration starts only after the complete production registry is sealed.
     dataManager.finalizeRegistrations(LAYER_STATE_REGISTRY);
     if (import.meta.env.DEV) {
+      // Dev-only handles for console measurement (entity counts, walk timings).
+      // Never defined in a production build — the DEV branch is dropped.
+      window.__gevDebug = { viewer, dataManager };
       window.__gevQaRegisterLayer = (targetManager, layerModule) => {
         if (targetManager !== dataManager) throw new Error('QA layer manager mismatch');
         return dataManager.registerForQa(layerModule);
