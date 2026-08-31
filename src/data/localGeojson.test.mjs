@@ -451,10 +451,17 @@ test('local infrastructure creates no native labels or per-frame geometry callba
   assert.doesNotMatch(source, /new Cesium\.CallbackProperty/);
   assert.match(source, /feature\.position = tip/);
   assert.match(source, /record\.entity\.position\.setValue\(record\.tip\)/);
-  assert.match(source, /const stemPositionBuffers = \[\[base, tip\], \[base, tip\]\]/);
+  // Stem buffers stay pre-allocated and double-buffered; the `const` moved
+  // inside the `if (stems)` block when stemless line layers were added.
+  assert.match(source, /stemPositionBuffers = \[\[base, tip\], \[base, tip\]\]/);
   assert.match(source, /record\.entity\.polyline\.positions\.setValue\(stemPositions\)/);
   assert.match(source, /viewer\.camera\.moveEnd\.addEventListener/);
-  assert.match(source, /if \(refreshStemGeometry\)/);
+  // Geometry refresh stays gated on the moveEnd flag, and a stemless record
+  // must never enter it — that guard is the whole point of `stems: false`.
+  assert.match(source, /if \(refreshStemGeometry && !record\.stemless\)/);
+  // A stemless layer builds no mast, no anchor dot and no ground-sample retry.
+  assert.match(source, /groundSampled: !stems/);
+  assert.match(source, /stemless: !stems/);
   assert.match(source, /now - _lastVisibilityUpdate < VISIBILITY_UPDATE_MS/);
 });
 

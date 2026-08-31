@@ -323,6 +323,12 @@ export function createLocalGeoJsonLayer({
   labels = true,
   labelMax = DEFAULT_LABEL_MAX,
   labelGridPx = DEFAULT_LABEL_GRID_PX,
+  // Lines take no stem. A vertical mast locates a point or a building
+  // footprint; a channel or a levee is not AT a place, it runs through many.
+  // Since the label anchors at the arc-length midpoint (on the line itself),
+  // the stem carries no placement information for line geometry — it is a
+  // per-entity cost with nothing to show for it.
+  stems = true,
   overlayHost = DEFAULT_OVERLAY_HOST,
   screenSpaceEventHandlerFactory = (canvas) => new Cesium.ScreenSpaceEventHandler(canvas),
   projectToWindow = (scene, position) => Cesium.SceneTransforms.worldToWindowCoordinates(scene, position),
@@ -521,14 +527,20 @@ export function createLocalGeoJsonLayer({
                   pos = Cesium.BoundingSphere.fromPoints(hierarchy.positions).center;
                 }
               } else if (feature.polyline) {
-                // Line geometry (levee centerlines, waterway channels). Anchor the
-                // stem at the run's bounding-sphere centre, and stash the drawn
-                // line: `feature.polyline` is overwritten by the stem graphic
-                // below, so the shape has to move onto an entity of its own.
+                // Line geometry (levee centerlines, waterway channels). Anchor at
+                // the arc-length midpoint, which lies on the line itself.
+                //
+                // The line only needs re-homing onto an entity of its own when a
+                // stem is drawn, because the stem graphic overwrites
+                // `feature.polyline`. With `stems: false` nothing overwrites it:
+                // the original ground-clamped line stays exactly where it is and
+                // no clone is built, halving the entity count for a line layer.
                 const linePositions = feature.polyline.positions?.getValue(Cesium.JulianDate.now());
                 if (linePositions && linePositions.length > 0) {
                   pos = polylineMidpointPosition(linePositions);
-                  pendingLines.push({ id: `${id}:line:${String(feature.id ?? i)}`, positions: linePositions });
+                  if (stems) {
+                    pendingLines.push({ id: `${id}:line:${String(feature.id ?? i)}`, positions: linePositions });
+                  }
                 }
               }
             }
@@ -537,7 +549,8 @@ export function createLocalGeoJsonLayer({
 
             const carto = Cesium.Cartographic.fromCartesian(pos);
             const groundHeight = 0; // Ellipsoid surface until a scene sample lands
-            const tipHeight = 2000; // Initial Stem height
+            // No stem means the label rides the anchor itself, down on the ground.
+            const tipHeight = stems ? 2000 : groundHeight;
 
             const base = Cesium.Cartesian3.fromRadians(carto.longitude, carto.latitude, groundHeight);
             const tip = Cesium.Cartesian3.fromRadians(carto.longitude, carto.latitude, tipHeight);
@@ -562,22 +575,29 @@ export function createLocalGeoJsonLayer({
             // Constant properties are refreshed on the existing 450 ms source
             // cadence. Cesium no longer evaluates 2-3 callbacks per entity on
             // every frame, while the point/stem pick surface stays native.
-            feature.position = tip;
-            const stemPositionBuffers = [[base, tip], [base, tip]];
-            feature.polyline = new Cesium.PolylineGraphics({
-              positions: stemPositionBuffers[0],
-              width: 3.5,
-              material: new Cesium.ColorMaterialProperty(baseColor),
-            });
-            feature.point = new Cesium.PointGraphics({
-              pixelSize: 10,
-              color: baseColor,
-              outlineColor: Cesium.Color.BLACK,
-              outlineWidth: 2,
-              // Never depth-cull the anchor against the photoreal mesh —
-              // globe-horizon culling is handled by the pre-render occluder.
-              disableDepthTestDistance: Number.POSITIVE_INFINITY,
-            });
+            //
+            // A stemless layer skips all of it: the drawn line is itself the pick
+            // surface and the label sits on it, so the mast, the anchor dot and
+            // the per-walk geometry refresh are all dead weight.
+            let stemPositionBuffers = null;
+            if (stems) {
+              feature.position = tip;
+              stemPositionBuffers = [[base, tip], [base, tip]];
+              feature.polyline = new Cesium.PolylineGraphics({
+                positions: stemPositionBuffers[0],
+                width: 3.5,
+                material: new Cesium.ColorMaterialProperty(baseColor),
+              });
+              feature.point = new Cesium.PointGraphics({
+                pixelSize: 10,
+                color: baseColor,
+                outlineColor: Cesium.Color.BLACK,
+                outlineWidth: 2,
+                // Never depth-cull the anchor against the photoreal mesh —
+                // globe-horizon culling is handled by the pre-render occluder.
+                disableDepthTestDistance: Number.POSITIVE_INFINITY,
+              });
+            }
 
             const priority = labelPriorityFromProperties(properties, id);
             _stemRecords.push({
@@ -590,7 +610,11 @@ export function createLocalGeoJsonLayer({
               stemPositionBuffers,
               stemPositionBufferIndex: 0,
               groundHeight,
-              groundSampled: false,
+              // A stemless anchor has no mast to bury or float, and the line it
+              // labels is already clampToGround, so it needs no ground sample.
+              // Marking it sampled keeps it out of the retry path entirely.
+              groundSampled: !stems,
+              stemless: !stems,
               lastGroundSampleMs: 0,
               priority,
               entry: labels ? createLocalInfrastructureOverlayEntry({
@@ -718,7 +742,7 @@ export function createLocalGeoJsonLayer({
           for (let i = 0; i < _stemRecords.length; i++) {
             const record = _stemRecords[i];
             const wasGroundSampled = record.groundSampled;
-            if (refreshStemGeometry) {
+            if (refreshStemGeometry && !record.stemless) {
               updateLocalStemGeometry(viewer, record, now);
             } else if (canSampleGround && !record.groundSampled
               && now - record.lastGroundSampleMs >= GROUND_SAMPLE_RETRY_MS) {

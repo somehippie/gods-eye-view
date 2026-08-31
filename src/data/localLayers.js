@@ -44,6 +44,7 @@ const deltaLevees = createLocalGeoJsonLayer({
   icon: '▬',
   source: 'CA DWR',
   labels: true,
+  stems: false,
   labelMax: 500,
   labelGridPx: 140,
 });
@@ -56,6 +57,7 @@ const deltaWaterways = createLocalGeoJsonLayer({
   icon: '≈',
   source: 'USGS NHD',
   labels: true,
+  stems: false,
   labelMax: 600,
   labelGridPx: 150,
 });
