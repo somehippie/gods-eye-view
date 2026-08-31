@@ -970,3 +970,147 @@ test('after the cap a camera-motion frame still samples, and re-opens the budget
     'a grounded record asks for no further frames',
   );
 });
+
+// ─── Line geometry (levees, waterways) ───────────────────────────
+//
+// Every other case in this file feeds a Polygon, so the branch that levee and
+// waterway layers actually take had no coverage at all — a green suite proved
+// nothing about it.
+//
+// The fixture is L-shaped on purpose: it runs north along a meridian, then east
+// along a parallel. Its bounding-box centre (-97.65, 30.25) therefore lies in
+// open space, while every point ON the line has either lon -97.70 or lat 30.30.
+// That gap is what makes the anchor choice assertable rather than a matter of
+// opinion.
+const L_SHAPED_LINE = {
+  type: 'Feature',
+  id: 'runtime-channel',
+  properties: { name: 'Runtime Slough' },
+  geometry: {
+    type: 'LineString',
+    coordinates: [[-97.70, 30.20], [-97.70, 30.30], [-97.60, 30.30]],
+  },
+};
+
+/**
+ * Enable a line layer over L_SHAPED_LINE.
+ * @param {object} [options]
+ * @param {boolean} [options.stems] Passed through to createLocalGeoJsonLayer;
+ *   omitted entirely when undefined so the default is exercised too.
+ */
+async function createLineLayerHarness({ stems } = {}) {
+  const originalFetch = globalThis.fetch;
+  const originalWindow = globalThis.window;
+  const dataSources = [];
+  globalThis.fetch = async () => ({
+    ok: true,
+    status: 200,
+    text: async () => JSON.stringify(L_SHAPED_LINE),
+  });
+  globalThis.window = { dispatchEvent() {} };
+  const viewer = {
+    selectedEntity: undefined,
+    dataSources: {
+      add(dataSource) { dataSources.push(dataSource); return dataSource; },
+      remove(dataSource) {
+        const index = dataSources.indexOf(dataSource);
+        if (index >= 0) dataSources.splice(index, 1);
+        return index >= 0;
+      },
+    },
+    camera: {
+      positionWC: Cesium.Cartesian3.fromDegrees(-97.695, 30.205, 100_000),
+      frustum: { fov: Math.PI / 3 },
+      moveEnd: new MockLayerEvent(),
+      flyTo() {},
+    },
+    scene: {
+      canvas: { clientWidth: 800, clientHeight: 600 },
+      preRender: new MockLayerEvent(),
+      sampleHeightSupported: false,
+      screenSpaceCameraController: { enableInputs: true },
+      pick() { return null; },
+      requestRender() {},
+    },
+  };
+  const layer = createLocalGeoJsonLayer({
+    id: 'local-delta-waterways',
+    url: '/runtime-channel.geojsonl',
+    name: 'Runtime Waterways',
+    color: '#33e0ff',
+    ...(stems === undefined ? {} : { stems }),
+    overlayHost: { setVisible() {}, setEntries() {}, clearSource() {} },
+    projectToWindow: () => ({ x: 400, y: 300 }),
+    screenSpaceEventHandlerFactory: () => ({ setInputAction() {}, destroy() {} }),
+  });
+  try {
+    await layer.enable(viewer);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+  return {
+    layer,
+    dataSources,
+    cleanup() {
+      if (originalWindow === undefined) delete globalThis.window;
+      else globalThis.window = originalWindow;
+    },
+  };
+}
+
+const degreesOf = (carto) => ({
+  lon: Cesium.Math.toDegrees(carto.longitude),
+  lat: Cesium.Math.toDegrees(carto.latitude),
+});
+
+test('line geometry is walked, not skipped, and anchors on the line itself', async () => {
+  const harness = await createLineLayerHarness();
+  try {
+    const entities = harness.dataSources[0].entities.values;
+    // The source entity, plus the ground-clamped clone that carries the shape
+    // once the stem graphic has overwritten feature.polyline.
+    assert.equal(entities.length, 2);
+
+    const source = entities.find((entity) => entity.__localBaseCarto);
+    assert.ok(source, 'the line reached the entity walk instead of being skipped');
+
+    const { lon, lat } = degreesOf(source.__localBaseCarto);
+    // Half of the ~20.7 km run falls on the northbound leg, which sits at
+    // lon -97.70 for its whole length.
+    assert.ok(Math.abs(lon - -97.70) < 0.01, `anchor longitude ${lon} is off the line`);
+    assert.ok(lat > 30.20 && lat < 30.30, `anchor latitude ${lat} is off the northbound leg`);
+    // The regression this exists to catch: the bounding-sphere centre is ~5 km
+    // away from any point on the line.
+    assert.ok(Math.abs(lon - -97.65) > 0.04, 'anchor regressed to the bounding-sphere centre');
+
+    // With a stem, the mast replaces the drawn line, so the shape must have
+    // moved to the clone or it would be lost.
+    assert.ok(source.point, 'a stemmed layer draws its anchor dot');
+    assert.equal(source.polyline.positions.getValue(Cesium.JulianDate.now()).length, 2);
+    const clone = entities.find((entity) => !entity.__localBaseCarto);
+    assert.equal(clone.polyline.positions.getValue(Cesium.JulianDate.now()).length, 3);
+  } finally {
+    harness.cleanup();
+  }
+});
+
+test('stems: false keeps the drawn line and builds no clone, mast or anchor dot', async () => {
+  const harness = await createLineLayerHarness({ stems: false });
+  try {
+    const entities = harness.dataSources[0].entities.values;
+    assert.equal(entities.length, 1, 'nothing overwrites the polyline, so nothing is cloned');
+    const [entity] = entities;
+    assert.equal(entity.point, undefined, 'a stemless layer draws no anchor dot');
+    assert.equal(
+      entity.polyline.positions.getValue(Cesium.JulianDate.now()).length,
+      3,
+      'the original line survives intact',
+    );
+    // Still a first-class feature: labelled, pickable, horizon-culled.
+    assert.ok(entity.__localBaseCarto, 'the feature is still registered for labels and picking');
+    const { lon } = degreesOf(entity.__localBaseCarto);
+    assert.ok(Math.abs(lon - -97.70) < 0.01, 'stemless anchoring uses the same midpoint rule');
+  } finally {
+    harness.cleanup();
+  }
+});
