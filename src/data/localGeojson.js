@@ -464,6 +464,8 @@ export function createLocalGeoJsonLayer({
           _count = entities.length;
           _stemRecords = [];
           _stemGeometryDirty = true;
+          // Captured line geometry, re-homed after the walk (see below).
+          const pendingLines = [];
           
           for (let i = 0; i < entities.length; i++) {
             const feature = entities[i];
@@ -481,6 +483,16 @@ export function createLocalGeoJsonLayer({
                 const hierarchy = feature.polygon.hierarchy?.getValue(Cesium.JulianDate.now());
                 if (hierarchy && hierarchy.positions && hierarchy.positions.length > 0) {
                   pos = Cesium.BoundingSphere.fromPoints(hierarchy.positions).center;
+                }
+              } else if (feature.polyline) {
+                // Line geometry (levee centerlines, waterway channels). Anchor the
+                // stem at the run's bounding-sphere centre, and stash the drawn
+                // line: `feature.polyline` is overwritten by the stem graphic
+                // below, so the shape has to move onto an entity of its own.
+                const linePositions = feature.polyline.positions?.getValue(Cesium.JulianDate.now());
+                if (linePositions && linePositions.length > 0) {
+                  pos = Cesium.BoundingSphere.fromPoints(linePositions).center;
+                  pendingLines.push({ id: `${id}:line:${String(feature.id ?? i)}`, positions: linePositions });
                 }
               }
             }
@@ -555,6 +567,24 @@ export function createLocalGeoJsonLayer({
               }) : null,
             });
           }
+          // Re-home captured line geometry only after the entity walk: adding to
+          // `loaded.entities` mid-iteration would shift the live `.values` array
+          // under the loop. These clones are deliberately NOT tagged with
+          // `__localLayerId` — the stem carries the pick surface and the context
+          // card, so leaving the clone untagged keeps the click handler on the
+          // one entity that has a registered context.
+          for (const line of pendingLines) {
+            loaded.entities.add({
+              id: line.id,
+              polyline: {
+                positions: line.positions,
+                width: 2,
+                clampToGround: true,
+                material: new Cesium.ColorMaterialProperty(baseColor.withAlpha(0.85)),
+              },
+            });
+          }
+
           // Setup finished — publish it.
           _dataSource = loaded;
           _lastUpdate = Date.now();
