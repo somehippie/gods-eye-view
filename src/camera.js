@@ -2,7 +2,6 @@ import * as Cesium from 'cesium';
 
 /**
  * Camera presets for notable locations.
- * Phase 1 default: fly to Austin, TX on load.
  */
 export const CAMERA_PRESETS = {
   austin: {
@@ -47,12 +46,38 @@ export function flyToPreset(viewer, presetName, duration = 3.0) {
 }
 
 /**
- * Set camera to Austin on load with a cinematic fly-in.
+ * The view the app opens on when no share link supplies one.
+ *
+ * Framing is field-tested, not derived — an earlier 7000 m / -35 degree /
+ * heading 320 attempt put the look-at point roughly 10 km out to the
+ * north-north-west, landing near Whipple Ave on the Union City/Hayward border
+ * with Fremont behind the camera. The look-at arithmetic was right; the aim
+ * was not.
+ *
+ * These values put the target about 4.2 km out (6000 / tan 55), which centres
+ * Fremont itself, and heading 0 looks due north up the bay rather than
+ * south-east into Mission Peak. The steeper pitch is what pulls the target
+ * back onto the city.
  */
-export function flyToAustin(viewer) {
+export const STARTUP_VIEW = Object.freeze({
+  label: 'Fremont, CA',
+  lon: -121.9886,
+  lat: 37.5485,
+  altitude: 6000,
+  heading: 0,
+  pitch: -55,
+  /** Overhead drop-in point for the cinematic approach. */
+  approachAltitude: 45000,
+});
+
+/**
+ * Set the opening camera with a cinematic fly-in: drop in from directly
+ * overhead, then settle into the framed oblique view.
+ */
+export function flyToStartupView(viewer, view = STARTUP_VIEW) {
   // Start from a high altitude, then fly down
   viewer.camera.setView({
-    destination: Cesium.Cartesian3.fromDegrees(-97.7431, 30.2672, 25000),
+    destination: Cesium.Cartesian3.fromDegrees(view.lon, view.lat, view.approachAltitude),
     orientation: {
       heading: Cesium.Math.toRadians(0),
       pitch: Cesium.Math.toRadians(-90),
@@ -63,10 +88,10 @@ export function flyToAustin(viewer) {
   // Cinematic fly-in after a brief pause
   setTimeout(() => {
     viewer.camera.flyTo({
-      destination: Cesium.Cartesian3.fromDegrees(-97.7431, 30.2672, 600),
+      destination: Cesium.Cartesian3.fromDegrees(view.lon, view.lat, view.altitude),
       orientation: {
-        heading: Cesium.Math.toRadians(15),
-        pitch: Cesium.Math.toRadians(-30),
+        heading: Cesium.Math.toRadians(view.heading),
+        pitch: Cesium.Math.toRadians(view.pitch),
         roll: 0.0,
       },
       duration: 4.0,
