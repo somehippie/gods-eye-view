@@ -40,13 +40,19 @@
  *   2. Coordinates rounded to 6 decimals (~0.1 m).
  *   3. The display name is normalised onto `properties.name` — the label
  *      resolver in src/data/localGeojson.js checks `props.name` first.
- *   4. Waterways are DISSOLVED by GNIS name: 2,968 raw segments become 199
- *      named channels, so the label arbiter sees one "Old River" rather than
- *      46 competing fragments. Levees are NOT dissolved — their segments carry
- *      distinct Reach and Levee_Condition values a dissolve would discard.
- *   5. Internal/editor metadata is dropped (OBJECTID, record-edit stamps,
+ *   4. Waterways are DISSOLVED by GNIS name: 2,968 raw segments are grouped
+ *      into 199 named channels. On its own the dissolve only shrinks the FILE —
+ *      Cesium re-splits every MultiLineString part back into its own entity, so
+ *      the renderer still saw 2,968. Step 5 is what actually reduces that.
+ *      Levees are NOT dissolved — their segments carry distinct Reach and
+ *      Levee_Condition values a dissolve would discard.
+ *   5. Parts that share an EXACT endpoint are stitched into the longest runs
+ *      possible (see stitchParts). Cesium expands every MultiLineString part
+ *      into its own entity, so part count — not feature count — is what the
+ *      renderer pays for. Loss-free: only duplicated join vertices are removed.
+ *   6. Internal/editor metadata is dropped (OBJECTID, record-edit stamps,
  *      shape-length columns). See PRIVACY below for owner names.
- *   6. Features sorted by name for a stable diff.
+ *   7. Features sorted by name for a stable diff.
  *
  * PRIVACY
  *
@@ -165,6 +171,65 @@ function simplifyLineParts(geometry) {
   return parts.map((part) => simplify(part, TOLERANCE).map(round)).filter((part) => part.length >= 2);
 }
 
+/**
+ * Endpoint key for stitching. Coordinates have already been rounded to
+ * DECIMALS by `round()`, so comparing the rounded text is comparing the stored
+ * values themselves — an EXACT match, not a proximity test. No tolerance is
+ * applied and no vertex is moved, invented, or interpolated: two parts are
+ * chained only when one literally ends on the coordinate the other starts from.
+ */
+const endpointKey = (coord) => `${coord[0].toFixed(DECIMALS)},${coord[1].toFixed(DECIMALS)}`;
+
+/**
+ * Chain parts that share an exact endpoint into the longest runs possible.
+ *
+ * NHD splits a named channel at every confluence, so "Old River" arrives as 46
+ * fragments that meet end to end. Cesium's GeoJsonDataSource expands every
+ * MultiLineString part into its OWN entity (processMultiLineString ->
+ * createLineString per part), so those fragments cost 46 entities, 46 stems and
+ * 46 duplicate labels — dissolving by name alone does not change that, because
+ * the part count is what the renderer sees.
+ *
+ * Stitching is loss-free: the only vertices removed are the duplicated shared
+ * endpoints where two parts join. A part that connects to nothing is returned
+ * unchanged.
+ *
+ * @param {number[][][]} parts Coordinate arrays for one named feature.
+ * @returns {number[][][]} Chained coordinate arrays.
+ */
+function stitchParts(parts) {
+  const pool = parts.map((part) => part.slice());
+  const chains = [];
+  while (pool.length) {
+    let chain = pool.pop();
+    let extended = true;
+    while (extended) {
+      extended = false;
+      for (let i = 0; i < pool.length; i++) {
+        const part = pool[i];
+        const head = endpointKey(chain[0]);
+        const tail = endpointKey(chain[chain.length - 1]);
+        if (tail === endpointKey(part[0])) {
+          chain = chain.concat(part.slice(1));
+        } else if (tail === endpointKey(part[part.length - 1])) {
+          chain = chain.concat(part.slice().reverse().slice(1));
+        } else if (head === endpointKey(part[part.length - 1])) {
+          chain = part.slice(0, -1).concat(chain);
+        } else if (head === endpointKey(part[0])) {
+          chain = part.slice().reverse().slice(0, -1).concat(chain);
+        } else {
+          continue;
+        }
+        pool.splice(i, 1);
+        extended = true;
+        break;
+      }
+    }
+    chains.push(chain);
+  }
+  return chains;
+}
+
 const lineGeometry = (parts) => (parts.length === 1
   ? { type: 'LineString', coordinates: parts[0] }
   : { type: 'MultiLineString', coordinates: parts });
@@ -225,7 +290,7 @@ function buildLevees(raw) {
   const out = [];
   for (const feature of raw.features || []) {
     if (!feature.geometry) continue;
-    const parts = simplifyLineParts(feature.geometry);
+    const parts = stitchParts(simplifyLineParts(feature.geometry));
     if (!parts.length) continue;
     const p = feature.properties || {};
     out.push({
@@ -268,16 +333,21 @@ function buildWaterways(features) {
   }
   return [...byName.entries()]
     .sort((a, b) => a[0].localeCompare(b[0]))
-    .map(([name, entry]) => JSON.stringify({
-      type: 'Feature',
-      geometry: lineGeometry(entry.parts),
-      properties: {
-        name,
-        ftype: entry.ftype,
-        length_km: Number(entry.km.toFixed(3)),
-        segments: entry.parts.length,
-      },
-    }));
+    .map(([name, entry]) => {
+      // Stitch AFTER the dissolve: every fragment of the channel is in hand, so
+      // chains can span what were separate source features.
+      const chained = stitchParts(entry.parts);
+      return JSON.stringify({
+        type: 'Feature',
+        geometry: lineGeometry(chained),
+        properties: {
+          name,
+          ftype: entry.ftype,
+          length_km: Number(entry.km.toFixed(3)),
+          segments: chained.length,
+        },
+      });
+    });
 }
 
 /** Page the NHD flowline query until the server stops reporting a transfer limit. */
