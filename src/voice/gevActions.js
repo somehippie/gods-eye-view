@@ -8,6 +8,11 @@ import {
 import { getNextIssPass } from '../data/satellites.js';
 import { CCTV_FOCUS_RESULT } from '../data/cctv.js';
 import { contextModeWord } from '../contextModePolicy.js';
+import {
+  isCapabilityAvailable,
+  isUnconfiguredStatus,
+  markCapabilityUnavailable,
+} from '../capabilityGate.js';
 import { createAnalystEngine } from '../data/analystEngine.js';
 import { layerFeedState } from '../data/manager.js';
 import militaryAwarenessLayer, {
@@ -237,6 +242,8 @@ const FRAME_TARGETS = new Map([
 
 const reverseGeocodeCache = new Map();
 const reverseGeocodeInFlight = new Map();
+const NEARBY_PLACES_CAPABILITY = 'Nearby places';
+const NEARBY_PLACES_REMEDY = 'enable the Places API for your key in Google Cloud Console, then reload';
 const nearbyPlacesCache = new Map();
 const nearbyPlacesInFlight = new Map();
 const VISIBLE_ENTITY_SHORTLIST = 64;
@@ -3039,6 +3046,10 @@ function summarizeViewportPlaces(places) {
 }
 
 async function fetchNearbyPlaces(latitude, longitude, cameraHeightM) {
+  // Latched off after a not-configured response: the cache is keyed by
+  // position, so a moving subject misses it on every update and would
+  // otherwise re-request for the life of the session.
+  if (!isCapabilityAvailable(NEARBY_PLACES_CAPABILITY)) return [];
   const radiusM = nearbyPlacesRadiusM(cameraHeightM);
   const cacheKey = nearbyPlacesCacheKey(latitude, longitude, cameraHeightM);
   if (nearbyPlacesCache.has(cacheKey)) return nearbyPlacesCache.get(cacheKey);
@@ -3052,6 +3063,14 @@ async function fetchNearbyPlaces(latitude, longitude, cameraHeightM) {
         radiusM: String(radiusM),
       });
       const response = await fetchWithTimeout(`/api/google/nearby-places?${params}`, {}, 5000);
+      // The proxy forwards the upstream status verbatim, so a key without the
+      // Places API enabled arrives here as 403 and a missing key as 503.
+      if (!response.ok && isUnconfiguredStatus(response.status)) {
+        markCapabilityUnavailable(
+          NEARBY_PLACES_CAPABILITY, `HTTP ${response.status}`, NEARBY_PLACES_REMEDY,
+        );
+        return [];
+      }
       const data = await response.json().catch(() => null);
       const places = response.ok && Array.isArray(data?.places)
       ? data.places.filter((place) => place?.name).slice(0, 12)

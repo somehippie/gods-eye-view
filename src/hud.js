@@ -17,6 +17,11 @@ import * as Cesium from 'cesium';
 import { forward as toMGRS } from 'mgrs';
 import { CITY_POIS } from './locations.js';
 import { composeLocalityTag } from './hudLocality.js';
+import {
+  isCapabilityAvailable,
+  isUnconfiguredStatus,
+  markCapabilityUnavailable,
+} from './capabilityGate.js';
 import { ellipsoidalToMslDisplayM, ensureGeoidReady, geoidHeight } from './data/geoid.js';
 import { getBasemapLabelContext } from './voice/gevActions.js';
 
@@ -35,6 +40,8 @@ const MILITARY_STYLES = new Set(['retro', 'surveillance', 'thermal']);
 const HUD_VARIANTS = new Set(['tactical', 'operator', 'minimal']);
 const HUD_SUMMARY_INTERVAL_MS = 15000;
 const HUD_SUMMARY_URL = '/api/openai/hud-summary';
+const HUD_SUMMARY_CAPABILITY = 'AI HUD summary';
+const HUD_SUMMARY_REMEDY = 'set OPENAI_API_KEY in .env, then restart the dev server';
 
 /**
  * Cell size (degrees) for the ALT readout's geoid-undulation cache. N changes
@@ -625,6 +632,13 @@ export class IntelHUD {
       return;
     }
     if (!force && !this._summaryDirty) return;
+    // Not configured: settle on the fallback line permanently instead of
+    // re-requesting on every position update for the rest of the session.
+    if (!isCapabilityAvailable(HUD_SUMMARY_CAPABILITY)) {
+      this._summaryDirty = false;
+      this._setSummaryText(fallbackText, animate);
+      return;
+    }
 
     const revision = this._summaryRevision;
     // Every caller invokes this as `void this._updateSummary(...)`, so nothing
@@ -657,6 +671,9 @@ export class IntelHUD {
     const controller = new AbortController();
     const timeout = window.setTimeout(() => controller.abort(), 5000);
     this._summaryRequest = controller;
+    // Captured outside the try so the catch can tell a configuration answer
+    // from a transient one.
+    let responseStatus = 0;
     try {
       const response = await fetch(HUD_SUMMARY_URL, {
         method: 'POST',
@@ -664,6 +681,7 @@ export class IntelHUD {
         body: JSON.stringify(context),
         signal: controller.signal,
       });
+      responseStatus = response.status;
       const data = await response.json().catch(() => null);
       if (!response.ok || !data?.summary) {
         throw new Error(data?.error || `HTTP ${response.status}`);
@@ -672,11 +690,19 @@ export class IntelHUD {
       this._setSummaryText(data.summary, animate);
     } catch (error) {
       if (error?.name !== 'AbortError') {
-        console.warn('[HUD] AI summary unavailable:', error);
-        // Invalidate the committed signature so the next periodic tick
-        // retries instead of sticking on the fallback line forever.
-        this._lastSummarySignature = null;
-        this._summaryDirty = true;
+        if (isUnconfiguredStatus(responseStatus)) {
+          // Configuration, not weather. Latch off and leave the signature
+          // committed so no later tick re-requests.
+          markCapabilityUnavailable(
+            HUD_SUMMARY_CAPABILITY, `HTTP ${responseStatus}`, HUD_SUMMARY_REMEDY,
+          );
+        } else {
+          console.warn('[HUD] AI summary unavailable:', error);
+          // Transient: invalidate the committed signature so the next periodic
+          // tick retries instead of sticking on the fallback line forever.
+          this._lastSummarySignature = null;
+          this._summaryDirty = true;
+        }
       }
       this._setSummaryText(fallbackText, animate);
     } finally {
