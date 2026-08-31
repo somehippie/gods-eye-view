@@ -9161,3 +9161,27 @@ body.scene-playback-mode #first-run-launcher {
   /* Scrolling a tile into view must not animate either. */
   .first-run-choices { scroll-behavior: auto; }
 }
+
+/* Copy-details affordance. Fixed corner placement so it never depends on a
+   panel being open — every readout it mirrors is canvas and unselectable. */
+#copy-selection-btn {
+  position: fixed;
+  right: 14px;
+  bottom: 46px;
+  z-index: 30;
+  min-width: 96px;
+  padding: 6px 10px;
+  border: 1px solid rgba(98, 181, 255, 0.3);
+  border-radius: 3px;
+  background: rgba(4, 14, 24, 0.82);
+  color: #cfe9ff;
+  font-family: inherit;
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  cursor: pointer;
+}
+#copy-selection-btn:hover {
+  border-color: rgba(98, 181, 255, 0.6);
+  color: #eaf6ff;
+}
+#copy-selection-btn[hidden] { display: none; }

@@ -1,6 +1,7 @@
 import * as Cesium from 'cesium';
 import { StyleManager } from './ui.js';
 import { STARTUP_VIEW, flyToStartupView } from './camera.js';
+import { initCopySelection } from './copySelection.js';
 import { DataLayerManager } from './data/manager.js';
 import flightsLayer from './data/flights.js';
 import militaryFlightsLayer from './data/militaryFlights.js';
@@ -252,6 +253,9 @@ async function init() {
       };
     }
     dataManager.buildTogglePanel(document.getElementById('data-toggles'));
+    // Canvas readouts carry no selectable text; this is the only way to lift a
+    // selected feature's identity off the screen without devtools.
+    initCopySelection({ dataManager });
     styleManager.attachDataManager(dataManager);
 
     // Initialize deterministic scene playback for social clip capture
