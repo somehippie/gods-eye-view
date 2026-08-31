@@ -67,6 +67,27 @@ export const DATA_CREDITS = [
     html: 'Earthquakes: Data courtesy of the U.S. Geological Survey',
   },
   {
+    key: 'ca-dsod-dams',
+    html:
+      'Dams: California DWR — Division of Safety of Dams, ' +
+      '<a href="https://data.cnra.ca.gov/dataset/i17-california-jurisdictional-dams" target="_blank" rel="noopener">i17 California Jurisdictional Dams</a> ' +
+      '(CC BY 4.0)',
+  },
+  {
+    key: 'ca-delta-levees',
+    html:
+      'Delta levees: California DWR, ' +
+      '<a href="https://data.cnra.ca.gov/dataset/i17-delta-levees-centerlines-2017" target="_blank" rel="noopener">i17 Delta Levees Centerlines 2017</a> ' +
+      '(CC BY 4.0)',
+  },
+  {
+    key: 'usgs-nhd',
+    html:
+      'Delta waterways: U.S. Geological Survey ' +
+      '<a href="https://www.usgs.gov/national-hydrography" target="_blank" rel="noopener">National Hydrography Dataset</a> ' +
+      '(public domain)',
+  },
+  {
     key: 'overpass',
     html:
       'Road geometry (traffic): ' +

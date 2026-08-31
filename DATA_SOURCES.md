@@ -61,7 +61,9 @@ Static datasets shipped in the repo for an out-of-the-box experience. **None are
 | Dataset | Folder | License | Commercial use? | Attribution |
 |---------|--------|---------|-----------------|-------------|
 | **Datacenters** (~4.3K) | `datacenters/` | **ODbL 1.0** (OpenStreetMap extract) | ✅ (attribution + share-alike on data) | "© OpenStreetMap contributors" |
-| **Dams** (704) | `dams/` | **ODbL 1.0** (OpenInfraMap / OSM extract) | ✅ (attribution + share-alike on data) | "© OpenStreetMap contributors" (+ Open Infrastructure Map) |
+| **Dams** (1,230, California) | `dams/` | **CC BY 4.0** (CA DWR — Division of Safety of Dams, `i17 California Jurisdictional Dams`) | ✅ (attribution) | "California DWR — Division of Safety of Dams (CC BY 4.0)" |
+| **Delta levees** (497) | `delta_levees/` | **CC BY 4.0** (CA DWR, `i17 Delta Levees Centerlines 2017`) | ✅ (attribution) | "California DWR (CC BY 4.0)" |
+| **Delta waterways** (199 named channels) | `delta_waterways/` | **Public domain** (USGS National Hydrography Dataset) | ✅ | "U.S. Geological Survey — National Hydrography Dataset" |
 | **TeleGeography Submarine Cable Map** (712 cables + 1,917 landing points) | `telegeography_submarine_cables/` | **CC BY-NC-SA 3.0** | ❌ **NonCommercial — remove for commercial use** | "© TeleGeography — submarinecablemap.com" |
 | **Natural Earth physical regions** (1,046 land + 292 marine named polygons) | `natural_earth/` | **Public domain** | ✅ (no restrictions) | "Made with Natural Earth" (courtesy credit — not legally required) |
 | **DataSF Analysis Neighborhoods** (41 SF neighborhood polygons) | `neighborhoods/` | **PDDL 1.0** (public domain) | ✅ (no restrictions) | "City & County of San Francisco — DataSF" (courtesy — not legally required) |
