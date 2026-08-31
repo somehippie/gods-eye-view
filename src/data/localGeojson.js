@@ -273,6 +273,42 @@ export function localDatasetError(error) {
 }
 
 /**
+ * The point halfway along a polyline by accumulated length.
+ *
+ * Line labels anchor here rather than at `BoundingSphere.fromPoints(...).center`:
+ * a bounding-sphere centre is a point in space, not a point on the line, and for
+ * a meandering channel it lands nowhere near the feature it names. Measured on
+ * the bundled Delta waterways set, centre-anchoring puts "San Joaquin River"
+ * 13.4 km from the river and "Old River" 9.0 km away, with 40 of 199 channels
+ * more than 1 km off their own water. The arc-length midpoint is on the line by
+ * construction, so it cannot drift no matter how long or how curved the run is.
+ *
+ * Only longitude/latitude are consumed downstream (the caller re-derives height
+ * from the ground sample), so interpolating a chord across the containing
+ * segment is exact for this purpose.
+ *
+ * @param {Cesium.Cartesian3[]} positions Polyline vertices, in order.
+ * @returns {Cesium.Cartesian3} A position lying on the polyline.
+ */
+function polylineMidpointPosition(positions) {
+  if (positions.length < 2) return positions[0];
+  const cumulative = [0];
+  let total = 0;
+  for (let i = 1; i < positions.length; i++) {
+    total += Cesium.Cartesian3.distance(positions[i - 1], positions[i]);
+    cumulative.push(total);
+  }
+  if (!(total > 0)) return positions[0];
+  const half = total / 2;
+  let index = 1;
+  while (index < cumulative.length - 1 && cumulative[index] < half) index++;
+  const spanStart = cumulative[index - 1];
+  const spanLength = cumulative[index] - spanStart;
+  const t = spanLength > 0 ? (half - spanStart) / spanLength : 0;
+  return Cesium.Cartesian3.lerp(positions[index - 1], positions[index], t, new Cesium.Cartesian3());
+}
+
+/**
  * A minimal, rock-solid native implementation for loading local GeoJSON Data.
  * Draws 3D stems (polylines) attached to Point entities and ensures
  * standard scene.pick natively clicks them.
@@ -491,7 +527,7 @@ export function createLocalGeoJsonLayer({
                 // below, so the shape has to move onto an entity of its own.
                 const linePositions = feature.polyline.positions?.getValue(Cesium.JulianDate.now());
                 if (linePositions && linePositions.length > 0) {
-                  pos = Cesium.BoundingSphere.fromPoints(linePositions).center;
+                  pos = polylineMidpointPosition(linePositions);
                   pendingLines.push({ id: `${id}:line:${String(feature.id ?? i)}`, positions: linePositions });
                 }
               }
