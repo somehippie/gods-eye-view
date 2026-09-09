@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { formatSelectionForCopy } from './copySelection.js';
+import { formatSelectionForCopy, shouldHandleCopyHotkey } from './copySelection.js';
 
 // The satellite case this exists for: the name alone is ambiguous across the
 // catalog, so the NORAD id has to survive into the copied line.
@@ -55,4 +55,71 @@ test('a record missing coordinates still copies its identity', () => {
     formatSelectionForCopy({ label: 'Bethel Island', layerName: 'Delta Levees', source: 'CA DWR' }),
     'Bethel Island · Delta Levees (CA DWR)',
   );
+});
+
+// ---------------------------------------------------------------------------
+// Ctrl+C hotkey guards. The button already works; the hotkey is only safe if it
+// stands down in every case where the browser had something of its own to copy.
+// ---------------------------------------------------------------------------
+
+/** A keydown landing on inert page chrome — the Cesium canvas, the body. */
+const onCanvas = (overrides = {}) => ({
+  key: 'c',
+  ctrlKey: true,
+  target: { isContentEditable: false, closest: () => null },
+  ...overrides,
+});
+
+/** A node that reports itself inside a form control, as the search box would. */
+const inField = { isContentEditable: false, closest: () => ({ tagName: 'INPUT' }) };
+
+test('Ctrl+C over the map is claimed as the copy hotkey', () => {
+  assert.equal(shouldHandleCopyHotkey(onCanvas()), true);
+  // Uppercase arrives when Caps Lock is on; the shortcut is the same key.
+  assert.equal(shouldHandleCopyHotkey(onCanvas({ key: 'C' })), true);
+});
+
+test('Cmd+C is claimed too, but never Ctrl+Cmd+C', () => {
+  assert.equal(shouldHandleCopyHotkey(onCanvas({ ctrlKey: false, metaKey: true })), true);
+  assert.equal(shouldHandleCopyHotkey(onCanvas({ ctrlKey: true, metaKey: true })), false);
+});
+
+test('a modified C belongs to the browser or another tool, not to us', () => {
+  // Ctrl+Shift+C is the devtools element picker.
+  assert.equal(shouldHandleCopyHotkey(onCanvas({ shiftKey: true })), false);
+  assert.equal(shouldHandleCopyHotkey(onCanvas({ altKey: true })), false);
+  // Bare C is the cockpit toggle in ui.js — taking it would break that.
+  assert.equal(shouldHandleCopyHotkey(onCanvas({ ctrlKey: false })), false);
+  assert.equal(shouldHandleCopyHotkey(onCanvas({ key: 'v' })), false);
+});
+
+test('a real text selection anywhere on the page keeps native copy', () => {
+  assert.equal(shouldHandleCopyHotkey(onCanvas(), { selectionText: 'Fremont' }), false);
+  // A collapsed caret stringifies to whitespace, which is not a selection.
+  assert.equal(shouldHandleCopyHotkey(onCanvas(), { selectionText: '   ' }), true);
+  assert.equal(shouldHandleCopyHotkey(onCanvas(), { selectionText: '' }), true);
+});
+
+test('the caret being in a field is checked independently of the selection', () => {
+  // A caret sitting in the search box reports no selection at all, so this is
+  // the case the selectionText check cannot see and the focus check must catch.
+  assert.equal(shouldHandleCopyHotkey(onCanvas({ target: inField }), { selectionText: '' }), false);
+  assert.equal(
+    shouldHandleCopyHotkey(onCanvas(), { activeElement: inField, selectionText: '' }),
+    false,
+  );
+  assert.equal(
+    shouldHandleCopyHotkey(onCanvas({
+      target: { isContentEditable: true, closest: () => null },
+    })),
+    false,
+  );
+});
+
+test('an already-handled, repeating, or composing keydown is left alone', () => {
+  assert.equal(shouldHandleCopyHotkey(onCanvas({ defaultPrevented: true })), false);
+  // Held Ctrl+C would otherwise re-flash COPIED for as long as the key is down.
+  assert.equal(shouldHandleCopyHotkey(onCanvas({ repeat: true })), false);
+  assert.equal(shouldHandleCopyHotkey(onCanvas({ isComposing: true })), false);
+  assert.equal(shouldHandleCopyHotkey(null), false);
 });

@@ -14,6 +14,9 @@
  * satellites emit neither. An event-driven button would silently miss a tracked
  * satellite, which is the case this exists for, so this polls one Map lookup on
  * a slow timer instead.
+ *
+ * Ctrl+C (Cmd+C) fires the same copy without the trip to the corner, but only
+ * when there is nothing native to copy — see shouldHandleCopyHotkey.
  */
 
 import { getSelectedEntityContext } from './data/contextStore.js';
@@ -38,6 +41,51 @@ const IDENTIFIER_KEYS = Object.freeze([
 ]);
 
 const MAX_IDENTIFIERS = 3;
+
+/**
+ * Anything that owns the caret and handles its own copy. `select` is included
+ * because it takes focus and Ctrl+C over a listbox is the browser's business.
+ */
+const EDITABLE_SELECTOR = 'input, textarea, select, [contenteditable], [role="textbox"]';
+
+/**
+ * Decide whether a keydown is a copy-the-selection hotkey we may take over.
+ *
+ * Pure so the whole modifier/guard matrix is testable without a DOM. It does
+ * NOT know whether a selection exists — the caller checks that first, so that
+ * with nothing selected we never reach preventDefault and Ctrl+C stays native.
+ *
+ * @param {KeyboardEvent|object|null} event
+ * @param {object} [context]
+ * @param {Element|null} [context.activeElement] `document.activeElement`.
+ * @param {string} [context.selectionText] `window.getSelection().toString()`.
+ * @returns {boolean}
+ */
+export function shouldHandleCopyHotkey(event, { activeElement = null, selectionText = '' } = {}) {
+  if (!event || event.defaultPrevented || event.repeat || event.isComposing) return false;
+  if (String(event.key ?? '').toLowerCase() !== 'c') return false;
+  // Exactly one of Ctrl/Cmd, so Ctrl+C on Windows and Cmd+C on macOS both land
+  // while Ctrl+Cmd+C — a copy on neither platform — does not.
+  if (Boolean(event.ctrlKey) === Boolean(event.metaKey)) return false;
+  // Ctrl+Shift+C is the devtools element picker and Ctrl+Alt+C belongs to other
+  // tools; firing on either would be a copy the user never asked for. AltGr on
+  // a Windows layout also reports ctrl+alt, and must not count as a hotkey.
+  if (event.shiftKey || event.altKey) return false;
+  // Real selected text always wins — native copy is what the user meant.
+  if (String(selectionText ?? '').trim()) return false;
+  // The focus check is separate from the selection check, and neither subsumes
+  // the other. Chrome 145 does report a drag-selection inside <input> through
+  // window.getSelection() (measured), but a bare caret in the search box
+  // reports '' — and Ctrl+C there is still the text field's, not ours. WebKit
+  // has historically reported '' for input selections at all, so leaning on
+  // selectionText alone would also be one engine change away from wrong.
+  for (const node of [event.target, activeElement]) {
+    if (!node) continue;
+    if (node.isContentEditable) return false;
+    if (node.closest?.(EDITABLE_SELECTOR)) return false;
+  }
+  return true;
+}
 
 const clean = (value) => {
   const text = String(value ?? '').trim();
@@ -108,10 +156,10 @@ export function initCopySelection({ dataManager } = {}) {
     button.hidden = !text;
     // The full line goes in the tooltip so the button face stays fixed-width
     // and never reflows the corner as selections change.
-    button.title = text ? `Copy: ${text}` : '';
+    button.title = text ? `Copy (Ctrl+C): ${text}` : '';
   };
 
-  const onClick = async () => {
+  const runCopy = async () => {
     if (!currentText) return;
     try {
       await navigator.clipboard.writeText(currentText);
@@ -127,7 +175,21 @@ export function initCopySelection({ dataManager } = {}) {
     }, COPIED_FEEDBACK_MS);
   };
 
-  button.addEventListener('click', onClick);
+  // The hotkey routes through runCopy so the COPIED / COPY FAILED flash in the
+  // corner is identical either way — that flash is the only confirmation the
+  // keyboard path gets, since there is no button press to feel.
+  const onKeyDown = (event) => {
+    if (!currentText) return;
+    if (!shouldHandleCopyHotkey(event, {
+      activeElement: document.activeElement,
+      selectionText: window.getSelection?.()?.toString() ?? '',
+    })) return;
+    event.preventDefault();
+    runCopy();
+  };
+
+  button.addEventListener('click', runCopy);
+  document.addEventListener('keydown', onKeyDown);
   const poll = window.setInterval(sync, POLL_MS);
   sync();
 
@@ -135,7 +197,8 @@ export function initCopySelection({ dataManager } = {}) {
     destroy() {
       window.clearInterval(poll);
       window.clearTimeout(feedbackTimer);
-      button.removeEventListener('click', onClick);
+      button.removeEventListener('click', runCopy);
+      document.removeEventListener('keydown', onKeyDown);
       button.remove();
     },
   };
