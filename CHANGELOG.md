@@ -3,10 +3,25 @@
 This changelog records public product changes. For the authoritative description
 of current runtime behavior, see [`docs/CURRENT-STATE.md`](docs/CURRENT-STATE.md).
 
-## [Unreleased] — 2026-08-24
+## [Unreleased] — 2026-09-10
 
 ### Added
 
+- Added a live **Rail & Ferry** layer: Bay Area train and ferry positions from
+  511.org, covering Caltrain, Capitol Corridor, ACE, SMART and the SF Bay Ferry
+  (~41 vehicles at rush hour). Requires a free `FIVEONEONE_TOKEN`; without one
+  the layer reports `KEY REQUIRED` and never contacts upstream. Buses are
+  filtered server-side — the regional feed carries ~2,000 vehicles and all but
+  ~40 of them are buses.
+- Added GTFS-Realtime decoding with no new dependency, covering both the
+  complete feed shape and the sparse one (Caltrain publishes no bearing, speed
+  or status, which now reads as absent rather than as zero).
+- Added `Ctrl+C` (`Cmd+C`) as a shortcut for the copy-details button, active
+  only while something is selected or tracked. Native copy still wins wherever
+  text is selected or the caret is in a field, and the shortcut stands down for
+  `Ctrl+Shift+C`, `Ctrl+Alt+C` and key repeat.
+- Added transit identity to copied details, so a selected train copies with its
+  line and trip the way an aircraft copies with its callsign.
 - Added honest aircraft identity narration: callsign, operator, registration,
   type, and route come only from selected-contact context, and missing operator,
   route, or type enrichment is named explicitly.
