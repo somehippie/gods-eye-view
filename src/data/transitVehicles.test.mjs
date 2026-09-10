@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { freshVehicles, vehicleLabel } from './transitVehicles.js';
+import transitVehiclesLayer, { freshVehicles, vehicleLabel } from './transitVehicles.js';
+import { normalizeLayerLoading } from '../loadingFeedback.js';
 
 const NOW = 1788998868000;
 const at = (secondsAgo) => Math.floor(NOW / 1000) - secondsAgo;
@@ -62,4 +63,29 @@ test('the staleness threshold is a parameter, not a magic constant', () => {
   const vehicles = [{ id: 'CT:1', latitude: 37.4, longitude: -122.1, timestamp: at(120) }];
   assert.equal(freshVehicles(vehicles, NOW, 60_000).length, 0);
   assert.equal(freshVehicles(vehicles, NOW, 300_000).length, 1);
+});
+
+test('the layer reports through getStats, which is the name the manager calls', () => {
+  // getStatus() was silently never read: DataLayerManager calls getStats(), so
+  // the count chip would have sat at "—" forever.
+  assert.equal(typeof transitVehiclesLayer.getStats, 'function');
+  assert.equal(transitVehiclesLayer.getStatus, undefined);
+  const stats = transitVehiclesLayer.getStats();
+  assert.equal(typeof stats.count, 'number');
+  assert.ok('lastUpdate' in stats && 'loading' in stats);
+});
+
+test('a missing token reads as KEY REQUIRED, not as a failed layer', () => {
+  const asLayer = (stats) => ({
+    id: 'transit-vehicles', name: 'Rail & Ferry', enabled: true, lifecycleState: 'enabled', stats,
+  });
+  // What the layer used to report: an ordinary error, which reads as degraded.
+  const asError = normalizeLayerLoading(asLayer({ count: 0, error: 'no_key' }));
+  assert.equal(asError.keyRequired, false);
+  assert.equal(asError.degraded, true);
+  // What it reports now.
+  const asKeyless = normalizeLayerLoading(asLayer({ count: 0, keyRequired: true }));
+  assert.equal(asKeyless.keyRequired, true);
+  assert.equal(asKeyless.degraded, false);
+  assert.equal(asKeyless.error, null);
 });

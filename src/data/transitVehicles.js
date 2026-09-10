@@ -57,6 +57,13 @@ let _lastUpdate = null;
 let _loading = false;
 let _error = null;
 let _hasKey = true;
+/**
+ * True when the proxy answered 503 {error:'no_key'} — FIVEONEONE_TOKEN unset.
+ * Surfaced as `keyRequired` because that is the field loadingFeedback.js reads
+ * to render KEY REQUIRED; reporting it as an ordinary error would show the
+ * layer as broken when it is merely unconfigured.
+ */
+let _keyRequired = false;
 
 /**
  * Human label for a vehicle.
@@ -274,6 +281,7 @@ const transitVehiclesLayer = {
     _count = 0;
     _lastUpdate = null;
     _error = null;
+    _keyRequired = false;
     _installClickHandler(viewer);
     restoreSpriteOrder(viewer);
   },
@@ -299,15 +307,18 @@ const transitVehiclesLayer = {
     try {
       const response = await fetch(ENDPOINT);
       if (response.status === 503) {
-        // No token configured. Degrade quietly like every other keyed layer.
+        // No token configured. Degrade quietly like every other keyed layer:
+        // KEY REQUIRED, not LOAD FAILED.
         _hasKey = false;
-        _error = 'no_key';
+        _keyRequired = true;
+        _error = null;
         render([]);
         return;
       }
       if (!response.ok) throw new Error(`proxy HTTP ${response.status}`);
       const payload = await response.json();
       _hasKey = true;
+      _keyRequired = false;
       _error = null;
       _lastUpdate = Date.now();
       render(freshVehicles(payload.vehicles, Date.now()));
@@ -319,14 +330,19 @@ const transitVehiclesLayer = {
     }
   },
 
-  getStatus() {
-    return {
+  getStats() {
+    const stats = {
       count: _count,
-      loading: _loading,
-      error: _error,
       lastUpdate: _lastUpdate,
+      loading: _loading,
       hasKey: _hasKey,
     };
+    if (_loading) stats.loadingLabel = 'reading rail and ferry feeds...';
+    // keyRequired, not error: loadingFeedback renders KEY REQUIRED off this
+    // field, while an error would show an unconfigured layer as failed.
+    if (_keyRequired) stats.keyRequired = true;
+    if (_error) stats.error = _error;
+    return stats;
   },
 
   destroy(viewer) {
