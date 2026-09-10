@@ -160,6 +160,14 @@ export const DATA_CREDITS = [
       '(MTC), via each operator’s GTFS-Realtime feed',
   },
   {
+    key: 'amtrak-trains',
+    html:
+      'Amtrak train positions: data originates with ' +
+      '<a href="https://www.amtrak.com/track-your-train-with-google-maps" target="_blank" rel="noopener">Amtrak</a>, ' +
+      'read via the community-decrypted mirror at ' +
+      '<a href="https://amtraker.com/" target="_blank" rel="noopener">amtraker.com</a>',
+  },
+  {
     key: 'radio-browser',
     html:
       'Internet-radio station directory: ' +

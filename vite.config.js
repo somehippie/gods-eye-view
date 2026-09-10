@@ -42,6 +42,7 @@ import {
 } from './src/data/tomtomTiles.js';
 import { filterTrailing24h, parseFirmsCsv } from './src/data/firmsCsv.js';
 import { decodeVehiclePositions, railAndFerryOnly } from './src/data/gtfsRealtime.js';
+import { normalizeAmtrakTrains } from './src/data/amtrakFeed.js';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
 import { defineConfig, loadEnv } from 'vite';
@@ -1754,6 +1755,47 @@ const TRANSIT_BACKOFF_MIN_MS = 60_000;
 /** Backoff ceiling, so a long throttle still recovers on its own. */
 const TRANSIT_BACKOFF_MAX_MS = 15 * 60_000;
 
+// --- Amtrak national train positions ---------------------------------------
+
+/**
+ * Milliseconds between upstream polls, and therefore the cache TTL.
+ *
+ * MEASURED, and corrected once. The first version of this constant was 180 s,
+ * justified by a derived ~3.5 min per-train update period computed from how
+ * many trains changed position between consecutive polls. **That figure is
+ * confounded**: a train stopped at a station has its fix refresh while its
+ * position does not move, so counting moves undercounts updates and overstates
+ * the period. It is a floor on update frequency, not an estimate of it.
+ *
+ * Fix age is the sound basis, read from the feed's own `updatedAt`:
+ * p50 2.7 min, p99 9.8 min, max 9.8 min (n=50). That p50 is server-side
+ * staleness which NO poll rate can reduce — a dot is already ~3 min old when
+ * it arrives.
+ *
+ * So 300 s costs about two extra minutes of worst-case age on something
+ * already three minutes stale, and buys 40% fewer requests: 12/hour instead of
+ * 20. At 79 mph the difference is 6.6 miles between polls versus 4.0, which is
+ * sub-pixel on a national map.
+ *
+ * This is a volunteer-run community endpoint with no key, no published quota
+ * and no rate-limit header. Cadence is the only courtesy available, so it is
+ * set to be a good guest rather than to the ceiling.
+ */
+const AMTRAK_POLL_MS = 300_000;
+
+/** First backoff step after an upstream refusal; doubles per consecutive one. */
+const AMTRAK_BACKOFF_MIN_MS = 5 * 60_000;
+/** Backoff ceiling. Long, because hammering a community host is the failure. */
+const AMTRAK_BACKOFF_MAX_MS = 30 * 60_000;
+
+/**
+ * Identifies this app to the upstream host, matching the Nominatim proxy.
+ *
+ * A community endpoint's operator can only tell polite traffic from abuse by
+ * what the client calls itself, so this carries a project URL to complain to.
+ */
+const AMTRAK_USER_AGENT = 'GodsEyeView/0.1 (+https://github.com/bilawalsidhu/gods-eye-view)';
+
 /**
  * Vite plugin: 511.org live rail and ferry positions for the Bay Area.
  *
@@ -1914,6 +1956,165 @@ function transitVehiclesProxy() {
 
   return {
     name: 'transit-vehicles-proxy',
+    configureServer(server) {
+      install(server.middlewares);
+    },
+    configurePreviewServer(server) {
+      install(server.middlewares);
+    },
+  };
+}
+
+/**
+ * Vite plugin: live Amtrak train positions, nationwide.
+ *
+ * ONE UPSTREAM CALL PER REFRESH, every 180 s — see AMTRAK_POLL_MS for the
+ * measurement behind that number. The response is normalized server-side and
+ * the non-running rows are dropped before anything crosses the wire.
+ *
+ * WHY NOT AMTRAK DIRECTLY. Amtrak's own MapDataService answers 200 with ~492 KB
+ * of base64 AES ciphertext (measured 2026-09-10; `getTrainsRealtime` is now a
+ * 404, the live name is `getTrainsData`). Decrypting it means defeating an
+ * obfuscation Amtrak deliberately added and re-breaking on every key rotation,
+ * so this reads the community-decrypted mirror instead, which publishes the
+ * same data as plain JSON with no auth. Decision recorded in DATA_SOURCES.md.
+ *
+ * NO KEY, WHICH MAKES THE CADENCE THE ONLY COURTESY AVAILABLE. There is no
+ * quota to stay inside and no rate-limit header to read, so the protections are
+ * a conservative fixed interval, a descriptive User-Agent with a contact URL,
+ * long backoff on any refusal, and serve-stale so a failure never turns into a
+ * retry storm.
+ *
+ * Routes:
+ *   GET /api/rail/amtrak        → {fetchedAt, stale, ttlMs, count, trains}
+ *   GET /api/rail/amtrak/status → {lastFetch, count, stale, ttlMs, throttledUntil}
+ *
+ * @returns {import('vite').Plugin}
+ */
+function amtrakTrainsProxy() {
+  const TTL_MS = AMTRAK_POLL_MS;
+  const MAX_RESPONSE_BYTES = 8 * 1024 * 1024;
+  const CACHE_PATH = path.join(process.cwd(), '.gev-cache', 'amtrak-trains.json');
+  const UPSTREAM = 'https://api-v3.amtraker.com/v3/trains';
+
+  /** @type {?{at: number, trains: Array<object>}} */
+  let mem = null;
+  let diskChecked = false;
+  const inFlight = new Map();
+  /** Epoch ms before which we must not call upstream again. */
+  let throttledUntil = 0;
+  let backoffMs = AMTRAK_BACKOFF_MIN_MS;
+
+  async function readDiskOnce() {
+    if (diskChecked) return;
+    diskChecked = true;
+    try {
+      const parsed = JSON.parse(await fsp.readFile(CACHE_PATH, 'utf8'));
+      if (Number.isFinite(parsed?.at) && Array.isArray(parsed?.trains)) mem = parsed;
+    } catch { /* first run or invalid cache */ }
+  }
+
+  async function writeDisk(entry) {
+    try {
+      await fsp.mkdir(path.dirname(CACHE_PATH), { recursive: true });
+      await fsp.writeFile(CACHE_PATH, JSON.stringify(entry), 'utf8');
+    } catch (error) {
+      console.warn(`[amtrak-proxy] cache write failed: ${error?.message || error}`);
+    }
+  }
+
+  async function refreshUpstream() {
+    if (Date.now() < throttledUntil) {
+      const error = new Error('locally backed off after an upstream refusal');
+      error.throttled = true;
+      throw error;
+    }
+    const upstream = await fetch(UPSTREAM, {
+      headers: { Accept: 'application/json', 'User-Agent': AMTRAK_USER_AGENT },
+      signal: AbortSignal.timeout(20000),
+    });
+    // 429 and 403 are both "stop asking" from a host with no published quota.
+    if (upstream.status === 429 || upstream.status === 403) {
+      throttledUntil = Date.now() + backoffMs;
+      backoffMs = Math.min(backoffMs * 2, AMTRAK_BACKOFF_MAX_MS);
+      const error = new Error(`upstream ${upstream.status}`);
+      error.throttled = true;
+      throw error;
+    }
+    if (!upstream.ok) throw new Error(`upstream HTTP ${upstream.status}`);
+    const body = await upstream.text();
+    if (body.length > MAX_RESPONSE_BYTES) throw new Error('upstream response too large');
+    const trains = normalizeAmtrakTrains(JSON.parse(body));
+    // A successful parse is the only thing that clears the backoff ramp.
+    backoffMs = AMTRAK_BACKOFF_MIN_MS;
+    const fresh = { at: Date.now(), trains };
+    mem = fresh;
+    void writeDisk(fresh);
+    return fresh;
+  }
+
+  function sendJson(res, status, body, cacheState) {
+    res.writeHead(status, {
+      'Content-Type': 'application/json',
+      'Cache-Control': 'no-store',
+      'X-GEV-Cache': cacheState,
+    });
+    res.end(JSON.stringify(body));
+  }
+
+  const payload = (entry, stale) => ({
+    fetchedAt: entry.at,
+    stale,
+    ttlMs: TTL_MS,
+    count: entry.trains.length,
+    trains: entry.trains,
+  });
+
+  function install(middlewares) {
+    // Registered before the bare route: `use` matches on prefix, so the more
+    // specific path has to come first or /status would never be reached.
+    middlewares.use('/api/rail/amtrak/status', (req, res) => {
+      sendJson(res, 200, {
+        lastFetch: mem?.at ?? null,
+        count: mem?.trains?.length ?? 0,
+        stale: mem ? Date.now() - mem.at >= TTL_MS : true,
+        ttlMs: TTL_MS,
+        throttledUntil: throttledUntil || null,
+      }, 'NONE');
+    });
+
+    middlewares.use('/api/rail/amtrak', async (req, res) => {
+      if (req.method !== 'GET') {
+        sendJson(res, 405, { error: 'Method Not Allowed' }, 'NONE');
+        return;
+      }
+      await readDiskOnce();
+      if (mem && Date.now() - mem.at < TTL_MS) {
+        sendJson(res, 200, payload(mem, false), 'HIT');
+        return;
+      }
+      const stale = mem;
+      const request = coalesceProxyRequest(inFlight, 'amtrak-trains', refreshUpstream);
+      try {
+        const fresh = await request.promise;
+        sendJson(res, 200, payload(fresh, false), request.shared ? 'INFLIGHT' : 'MISS');
+      } catch (error) {
+        if (stale) {
+          if (!request.shared) {
+            console.warn(`[amtrak-proxy] refresh failed (${error?.message || error}) — serving last good frame`);
+          }
+          sendJson(res, 200, payload(stale, true), error?.throttled ? 'STALE-THROTTLED' : 'STALE-ERROR');
+          return;
+        }
+        sendJson(res, error?.throttled ? 429 : 502, {
+          error: error?.throttled ? 'upstream_throttled' : 'upstream_unavailable',
+        }, 'NONE');
+      }
+    });
+  }
+
+  return {
+    name: 'amtrak-trains-proxy',
     configureServer(server) {
       install(server.middlewares);
     },
@@ -7550,6 +7751,7 @@ export default defineConfig(({ mode }) => {
       firmsProxy(),
       rocketLaunchesProxy(),
       transitVehiclesProxy(),
+      amtrakTrainsProxy(),
       terrainHeightsProxy(),
       adsbdbProxy(),
       overpassProxy(),
