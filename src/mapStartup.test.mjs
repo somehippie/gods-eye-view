@@ -102,3 +102,44 @@ test('failed direct and ion requests preserve the keyless OSM fallback', async (
   assert.equal(Cesium.calls.length, 2);
   assert.equal(Cesium.GoogleMaps.defaultApiKey, undefined);
 });
+
+test('tilesetOptions reach the tileset constructor, not just the call site', async () => {
+  // THE MERGE GUARD. This fork caps the Google 3D Tiles cache because the host
+  // Chrome terminates the GPU process on VRAM exhaustion instead of degrading.
+  // Upstream v0.1.1 moved the constructor call inside this helper for keyless
+  // boot, and the helper passed NO second argument — so taking that refactor
+  // verbatim silently restored Cesium's 1536 MB + 1024 MB default. The symptom
+  // is a GPU-process kill, which reads as a crash rather than a lost merge hunk.
+  let received;
+  const CesiumStub = {
+    Ion: { defaultAccessToken: null },
+    GoogleMaps: { defaultApiKey: null },
+    createGooglePhotorealistic3DTileset: async (_primary, options) => {
+      received = options;
+      return { id: 'tileset' };
+    },
+  };
+  const result = await loadPhotorealisticTileset(CesiumStub, {
+    googleApiKey: 'key',
+    tilesetOptions: { cacheBytes: 512 * 1024 * 1024, maximumCacheOverflowBytes: 256 * 1024 * 1024 },
+  });
+  assert.equal(result.route, 'google-direct');
+  assert.equal(received.cacheBytes, 512 * 1024 * 1024);
+  assert.equal(received.maximumCacheOverflowBytes, 256 * 1024 * 1024);
+});
+
+test('omitting tilesetOptions still calls the constructor cleanly', async () => {
+  // Upstream's own callers pass nothing; the default must not be undefined,
+  // which Cesium would treat differently from an empty options object.
+  let received = 'never called';
+  const CesiumStub = {
+    Ion: { defaultAccessToken: null },
+    GoogleMaps: { defaultApiKey: null },
+    createGooglePhotorealistic3DTileset: async (_primary, options) => {
+      received = options;
+      return { id: 'tileset' };
+    },
+  };
+  await loadPhotorealisticTileset(CesiumStub, { googleApiKey: 'key' });
+  assert.deepEqual(received, {});
+});
