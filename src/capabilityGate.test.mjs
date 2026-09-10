@@ -1,10 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  TRANSIENT_FAILURE_LATCH_THRESHOLD,
   _resetCapabilityGateForTest,
   isCapabilityAvailable,
   isUnconfiguredStatus,
   markCapabilityUnavailable,
+  recordCapabilitySuccess,
+  recordTransientFailure,
 } from './capabilityGate.js';
 
 test('only configuration answers latch; transient failures keep retrying', () => {
@@ -74,4 +77,52 @@ test('resetting re-arms the latch — the reload path', () => {
   } finally {
     console.info = originalInfo;
   }
+});
+
+test('a transient failure does not latch until it stops looking transient', () => {
+  _resetCapabilityGateForTest();
+  // Latching on the first 502 would disable a layer because wifi blipped.
+  for (let i = 1; i < TRANSIENT_FAILURE_LATCH_THRESHOLD; i += 1) {
+    assert.equal(recordTransientFailure('BART departures', 'HTTP 502', 'check upstream'), false);
+    assert.equal(isCapabilityAvailable('BART departures'), true, `still available after ${i}`);
+  }
+  // The threshold-th consecutive failure is no longer a blip.
+  assert.equal(recordTransientFailure('BART departures', 'HTTP 502', 'check upstream'), true);
+  assert.equal(isCapabilityAvailable('BART departures'), false);
+});
+
+test('one success resets the streak, so a recovering upstream never latches', () => {
+  _resetCapabilityGateForTest();
+  for (let i = 1; i < TRANSIENT_FAILURE_LATCH_THRESHOLD; i += 1) {
+    recordTransientFailure('flaky', 'timeout', 'retry');
+  }
+  recordCapabilitySuccess('flaky');
+  // Streak is back to zero: another full run short of the threshold still holds.
+  for (let i = 1; i < TRANSIENT_FAILURE_LATCH_THRESHOLD; i += 1) {
+    assert.equal(recordTransientFailure('flaky', 'timeout', 'retry'), false);
+  }
+  assert.equal(isCapabilityAvailable('flaky'), true);
+});
+
+test('the latch fires once and then stays quiet', () => {
+  _resetCapabilityGateForTest();
+  for (let i = 0; i < TRANSIENT_FAILURE_LATCH_THRESHOLD; i += 1) {
+    recordTransientFailure('gone', 'HTTP 502', 'upstream retired');
+  }
+  assert.equal(isCapabilityAvailable('gone'), false);
+  // Every later poll must return false — that is what "one message and silence" means.
+  for (let i = 0; i < 20; i += 1) {
+    assert.equal(recordTransientFailure('gone', 'HTTP 502', 'upstream retired'), false);
+  }
+});
+
+test('the streak is per capability, so one dead feed does not latch another', () => {
+  _resetCapabilityGateForTest();
+  for (let i = 0; i < TRANSIENT_FAILURE_LATCH_THRESHOLD; i += 1) {
+    recordTransientFailure('dead', 'HTTP 502', 'retired');
+    recordTransientFailure('alive', 'HTTP 502', 'retried');
+    recordCapabilitySuccess('alive');
+  }
+  assert.equal(isCapabilityAvailable('dead'), false);
+  assert.equal(isCapabilityAvailable('alive'), true);
 });

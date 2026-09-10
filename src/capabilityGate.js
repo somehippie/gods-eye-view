@@ -70,6 +70,72 @@ export function markCapabilityUnavailable(name, detail, remedy) {
   return true;
 }
 
+/**
+ * How many consecutive transient failures before a capability latches off.
+ *
+ * Deliberately not 1. The whole point of the transient class is that a 502, a
+ * timeout or a network blip should be retried — latching on the first one would
+ * disable a layer because a laptop's wifi dropped for a second.
+ */
+export const TRANSIENT_FAILURE_LATCH_THRESHOLD = 5;
+
+/** @type {Map<string, number>} consecutive transient failures per capability. */
+const _failureStreak = new Map();
+
+/**
+ * Record a transient failure, and latch the capability off once they stop
+ * looking transient.
+ *
+ * WHY THIS EXISTS SEPARATELY FROM markCapabilityUnavailable. That function
+ * handles "not configured": a 401/403/501/503 says the feature will not work
+ * until someone changes a key or an account, and one of those is enough to
+ * stop asking. It deliberately treats 502/timeout/network as retryable, which
+ * is right — until the upstream does not come back.
+ *
+ * An upstream that disappears permanently only ever produces the transient
+ * class, so without this the layer logs a warning on every poll forever. That
+ * is the failure mode for anything read from a host we do not control: a
+ * community mirror that goes away, an agency endpoint retired without notice.
+ * Five consecutive failures is no longer a blip, and one message then silence
+ * beats a console line every 30 seconds until the tab is closed.
+ *
+ * Any success resets the streak, so an upstream that recovers on the fourth
+ * try never latches.
+ *
+ * @param {string} name Capability name.
+ * @param {string} detail What was observed, e.g. `HTTP 502`.
+ * @param {string} remedy What the operator could do about it.
+ * @param {number} [threshold]
+ * @returns {boolean} True on the call that latches it off.
+ */
+export function recordTransientFailure(
+  name,
+  detail,
+  remedy,
+  threshold = TRANSIENT_FAILURE_LATCH_THRESHOLD,
+) {
+  if (_unavailable.has(name)) return false;
+  const streak = (_failureStreak.get(name) ?? 0) + 1;
+  _failureStreak.set(name, streak);
+  if (streak < threshold) return false;
+  _failureStreak.delete(name);
+  return markCapabilityUnavailable(
+    name,
+    `${detail} — ${streak} consecutive failures`,
+    remedy,
+  );
+}
+
+/**
+ * Clear a capability's failure streak. Call on every success.
+ * @param {string} name Capability name.
+ * @returns {void}
+ */
+export function recordCapabilitySuccess(name) {
+  _failureStreak.delete(name);
+}
+
 export function _resetCapabilityGateForTest() {
   _unavailable.clear();
+  _failureStreak.clear();
 }
