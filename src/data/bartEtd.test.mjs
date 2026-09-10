@@ -169,7 +169,7 @@ test('BART returns a bare object where a single-element array is expected', () =
   assert.equal(byStation.get('BAYF')[0].minutes, 5);
 });
 
-test('the copy button identifies a station, and says when the next train goes', () => {
+test('the copy button identifies a station by name and code, not by its board', () => {
   const merged = mergeStationDepartures(normalizeStations(stnPayload), normalizeDepartures(etdPayload));
   const station = merged.find((s) => s.code === 'BAYF');
   const line = formatSelectionForCopy({
@@ -188,8 +188,7 @@ test('the copy button identifies a station, and says when the next train goes', 
   });
   assert.equal(
     line,
-    'Bay Fair Station · Berryessa Leaving · Station BAYF · '
-    + 'BART Departures (api.bart.gov) · 37.69692, -122.12651',
+    'Bay Fair Station · Station BAYF · BART Departures (api.bart.gov) · 37.69692, -122.12651',
   );
 });
 

@@ -39,17 +39,12 @@ const IDENTIFIER_KEYS = Object.freeze([
   ['national_id', (value) => `NID ${value}`],
   ['vehicleId', (value) => `VEH ${value}`],
   ['tripId', (value) => `Trip ${value}`],
-  // A station's next departure. This is the ONE volatile value in this list,
-  // and it is here deliberately. Everywhere else a changing number is excluded
-  // because a pasted "53 mph" is wrong by the time it is read — but a station's
-  // identity is permanent, so the line can never become wrong about WHICH thing
-  // it names, only about a departure that has since left. Without it a copied
-  // station reads "Bay Fair Station · Station BAYF · BART Departures", which
-  // tells the reader nothing they did not already have.
-  //
-  // The cost is real: it degrades the line as a search query, which is what
-  // this module is otherwise built for. Drop this entry to get the terse form.
-  ['nextDeparture', (value) => String(value)],
+  // A station code. Deliberately the only station field here: `nextDeparture`
+  // was tried and removed. It is stable in the sense that matters — a station's
+  // identity is permanent, so the line could never be wrong about WHICH station
+  // it names — but "Berryessa Leaving" is noise in a search box, and a search
+  // box is what this module builds for. The station name and code are the
+  // identity worth pasting; the live board is on screen already.
   ['stationCode', (value) => `Station ${value}`],
   ['operator', (value) => String(value)],
 ]);
