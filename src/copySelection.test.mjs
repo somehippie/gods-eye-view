@@ -67,6 +67,22 @@ test('a train copies the trip that pins the run, not the label back to itself', 
   );
 });
 
+test('a multi-word operator already in the label is not repeated after it', () => {
+  // Caught in the browser: "Capitol Corridor CC 6965 · Trip 544 · Capitol
+  // Corridor · ...". Single-token matching could not see the two-word operator.
+  assert.equal(
+    formatSelectionForCopy({
+      label: 'Capitol Corridor CC 6965',
+      layerName: 'Rail & Ferry',
+      source: '511.org',
+      latitude: 37.65254,
+      longitude: -122.08412,
+      properties: { vehicleId: '6965', tripId: '544', operator: 'Capitol Corridor' },
+    }),
+    'Capitol Corridor CC 6965 · Trip 544 · Rail & Ferry (511.org) · 37.65254, -122.08412',
+  );
+});
+
 test('token dedup does not swallow an identifier that is merely a substring', () => {
   // "123" must survive a label containing "1234" — the guard is whole-word.
   const line = formatSelectionForCopy({

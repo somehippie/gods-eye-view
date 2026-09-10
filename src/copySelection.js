@@ -43,20 +43,28 @@ const IDENTIFIER_KEYS = Object.freeze([
 ]);
 
 /**
- * Does the label already say this, as a whole word?
+ * Does the label already say this, in whole words?
  *
- * A transit label is built from the line and the fleet number ("Caltrain Local
- * Weekday 144"), so the vehicle id it came from would otherwise be appended
- * right back onto it. Token equality, not substring: MMSI 123 must still
- * survive a label that happens to contain "1234".
+ * A transit label is assembled from the operator, the line and the fleet number
+ * ("Capitol Corridor CC 6965"), so all three would otherwise be appended right
+ * back onto a label that already contains them.
+ *
+ * Compares token RUNS, not characters and not single tokens: a multi-word
+ * operator like "Capitol Corridor" has to match, while MMSI 123 must still
+ * survive a label containing "1234".
  *
  * @param {string} label
  * @param {string} value
  * @returns {boolean}
  */
 function labelAlreadySays(label, value) {
-  const needle = value.toLowerCase();
-  return label.toLowerCase().split(/\s+/).includes(needle);
+  const haystack = label.toLowerCase().split(/\s+/).filter(Boolean);
+  const needle = value.toLowerCase().split(/\s+/).filter(Boolean);
+  if (!needle.length || needle.length > haystack.length) return false;
+  for (let start = 0; start <= haystack.length - needle.length; start += 1) {
+    if (needle.every((token, offset) => haystack[start + offset] === token)) return true;
+  }
+  return false;
 }
 
 const MAX_IDENTIFIERS = 3;
