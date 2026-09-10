@@ -14,3 +14,5 @@ output/
 
 # Session scratch: handoff reports for review chats, not project content.
 handoff/
+pinokio/ENVIRONMENT
+pinokio/.installed
