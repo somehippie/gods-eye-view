@@ -2005,13 +2005,26 @@ function transitVehiclesProxy() {
  *   GET /api/rail/bart        → {fetchedAt, stale, ttlMs, count, open, stations}
  *   GET /api/rail/bart/status → {lastFetch, count, stale, ttlMs, throttledUntil}
  *
+ * EXPORTED so a test can drive it against recorded fixtures with `fetch`
+ * stubbed. Vite reads only the default export from this file, so a named export
+ * costs nothing at build time. This exists because a first version built the
+ * ETD url without `orig` and shipped past 21 green unit tests — every one of
+ * them exercised the normalizer, and nothing touched the boundary where this
+ * code meets the network. See bartProxy.test.mjs.
+ *
  * @returns {import('vite').Plugin}
  */
-function bartDeparturesProxy() {
+export function bartDeparturesProxy({ cacheDir } = {}) {
   const TTL_MS = BART_POLL_MS;
   const MAX_RESPONSE_BYTES = 4 * 1024 * 1024;
-  const CACHE_PATH = path.join(process.cwd(), '.gev-cache', 'bart-departures.json');
-  const STATIONS_CACHE_PATH = path.join(process.cwd(), '.gev-cache', 'bart-stations.json');
+  // Injectable so a test gets its own cache directory. Without this the disk
+  // cache is process-global state that survives between plugin instances, and
+  // boundary tests silently become order-dependent — the second test mounts a
+  // fresh proxy, reads the frame the first test just wrote, and makes no
+  // upstream call at all. Found by writing those tests.
+  const CACHE_DIR = cacheDir || path.join(process.cwd(), '.gev-cache');
+  const CACHE_PATH = path.join(CACHE_DIR, 'bart-departures.json');
+  const STATIONS_CACHE_PATH = path.join(CACHE_DIR, 'bart-stations.json');
 
   /** @type {?{at: number, stations: Array<object>}} */
   let mem = null;
