@@ -51,9 +51,12 @@ reading exists under which it addresses LLM agents answering questions rather
 than map applications, and under which the README's "Interactive Maps"
 attribution rule shows map use is contemplated. That reading does a lot of work
 to reach yes, and `llms.txt` sits at the API root addressing automated clients,
-which a polling proxy is. **Permission has been requested by email
-(amtraker@piemadd.com, the channel the README names for licensing questions).
-The layer stays parked until there is an answer.**
+which a polling proxy is.
+
+**Permission was requested by email on 2026-09-10, to amtraker@piemadd.com —
+the channel the README names for licensing questions. Sent; no reply yet. The
+layer stays parked until there is one.** If the answer is no, the removal is
+deleting the branch: nothing on `delta-water-layers` depends on it.
 
 Reading around a volunteer's stated wishes to save a few days on a hobby map is
 not a trade worth making.
