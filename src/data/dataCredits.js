@@ -153,6 +153,13 @@ export const DATA_CREDITS = [
     html: 'Bikeshare availability: GBFS operator feeds (e.g. Austin BCycle)',
   },
   {
+    key: 'transit-511',
+    html:
+      'Bay Area rail and ferry positions: ' +
+      '<a href="https://511.org/open-data" target="_blank" rel="noopener">511 SF Bay Open Data</a> ' +
+      '(MTC), via each operator’s GTFS-Realtime feed',
+  },
+  {
     key: 'radio-browser',
     html:
       'Internet-radio station directory: ' +

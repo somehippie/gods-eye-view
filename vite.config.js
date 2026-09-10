@@ -18,6 +18,7 @@
  *  13. Weather effects — camera-local Open-Meteo observations without news/geocoding overhead
  *  14. Rocket launches — recent Launch Library 2 mission metadata
  *  15. Radio Browser — public-domain station directory and click counting
+ *  16. 511.org transit — live Bay Area rail and ferry vehicle positions
  *
  * Also exposes Cesium and Google 3D Tiles API keys to the
  * client via `import.meta.env.*` defines.
@@ -40,6 +41,7 @@ import {
   isOverBudget as isTomTomOverBudget,
 } from './src/data/tomtomTiles.js';
 import { filterTrailing24h, parseFirmsCsv } from './src/data/firmsCsv.js';
+import { decodeVehiclePositions, railAndFerryOnly } from './src/data/gtfsRealtime.js';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
 import { defineConfig, loadEnv } from 'vite';
@@ -1711,6 +1713,207 @@ function rocketLaunchesProxy() {
 
   return {
     name: 'rocket-launches-proxy',
+    configureServer(server) {
+      install(server.middlewares);
+    },
+    configurePreviewServer(server) {
+      install(server.middlewares);
+    },
+  };
+}
+
+// 511.org transit proxy constants.
+
+/**
+ * Milliseconds between upstream polls, and therefore the cache TTL.
+ *
+ * MEASURED, NOT ASSUMED. 511 publishes no reset header and its
+ * `RateLimit-Remaining` is per-backend-node — consecutive requests reported
+ * values tens apart — so the quota shape had to be established by saturating
+ * it and watching it come back:
+ *
+ *   - 150 sequential calls never throttled; the first 429 arrived at call 176,
+ *     consistent with ~3 nodes holding 60 each.
+ *   - Once exhausted, 36 calls/hour was NOT enough to stay ahead of it: every
+ *     five minutes for 35 minutes, two of three probes still 429'd.
+ *   - Then every node reset to 60 AT ONCE, ~1 h after the first request of the
+ *     window. That is a FIXED hourly window, not a rolling one.
+ *
+ * So the real budget is 60 requests/hour, and because a request cannot be
+ * pinned to a node, it has to be spent as if only one node's 60 exists. 60 s
+ * would sit exactly on that ceiling with nothing left for a dev-server restart
+ * or a retry; 90 s spends 40/hour and keeps a third of the budget in reserve.
+ *
+ * The cost is freshness: the feed's own vehicle timestamps run a median 13 s
+ * and at most 30 s behind its clock, so a dot on screen is up to ~2 min old.
+ */
+const TRANSIT_POLL_MS = 90_000;
+
+/** First backoff step after a 429; doubles per consecutive throttle. */
+const TRANSIT_BACKOFF_MIN_MS = 60_000;
+/** Backoff ceiling, so a long throttle still recovers on its own. */
+const TRANSIT_BACKOFF_MAX_MS = 15 * 60_000;
+
+/**
+ * Vite plugin: 511.org live rail and ferry positions for the Bay Area.
+ *
+ * ONE UPSTREAM CALL PER REFRESH. 511 publishes both per-agency feeds and a
+ * combined `agency=RG` feed. The rail and ferry cohort spans seven operators,
+ * so per-agency polling would cost seven calls per refresh against a quota that
+ * measurably does throttle; RG costs one call and carries all of them, and the
+ * agency prefix on route/trip ids is what separates them again afterwards.
+ *
+ * The response is decoded server-side and the ~2,000 buses are dropped before
+ * anything crosses the wire, so the client receives ~43 vehicles of JSON
+ * instead of 200 KB of protobuf it would have to filter itself.
+ *
+ * THROTTLING IS REAL AND SILENT. 511 answers 429 with no `Retry-After` and no
+ * reset header, and its `RateLimit-Remaining` header is per-backend-node — it
+ * jumps around by tens between consecutive requests, so it cannot be used as a
+ * budget gauge. The only safe posture is a conservative fixed cadence plus
+ * backoff on 429, holding the last good frame meanwhile.
+ *
+ * Routes:
+ *   GET /api/transit/vehicles → {fetchedAt, feedTimestamp, stale, ttlMs, count, vehicles}
+ *   GET /api/transit/status   → {hasKey, lastFetch, count, stale, ttlMs, throttledUntil}
+ *
+ * Keyless (no FIVEONEONE_TOKEN): /api/transit/vehicles → 503 {error:'no_key'};
+ * status → {hasKey:false}. Upstream is never touched without a token.
+ *
+ * @returns {import('vite').Plugin}
+ */
+function transitVehiclesProxy() {
+  const TTL_MS = TRANSIT_POLL_MS;
+  const MAX_RESPONSE_BYTES = 8 * 1024 * 1024;
+  const CACHE_PATH = path.join(process.cwd(), '.gev-cache', 'transit-vehicles.json');
+
+  /** @type {?{at: number, feedTimestamp: ?number, vehicles: Array<object>}} */
+  let mem = null;
+  let diskChecked = false;
+  const inFlight = new Map();
+  /** Epoch ms before which we must not call upstream again after a 429. */
+  let throttledUntil = 0;
+  let backoffMs = TRANSIT_BACKOFF_MIN_MS;
+
+  const token = () => String(process.env.FIVEONEONE_TOKEN || '').trim();
+
+  async function readDiskOnce() {
+    if (diskChecked) return;
+    diskChecked = true;
+    try {
+      const parsed = JSON.parse(await fsp.readFile(CACHE_PATH, 'utf8'));
+      if (Number.isFinite(parsed?.at) && Array.isArray(parsed?.vehicles)) mem = parsed;
+    } catch { /* first run or invalid cache */ }
+  }
+
+  async function writeDisk(entry) {
+    try {
+      await fsp.mkdir(path.dirname(CACHE_PATH), { recursive: true });
+      await fsp.writeFile(CACHE_PATH, JSON.stringify(entry), 'utf8');
+    } catch (error) {
+      console.warn(`[transit-proxy] cache write failed: ${error?.message || error}`);
+    }
+  }
+
+  async function refreshUpstream() {
+    if (Date.now() < throttledUntil) {
+      const error = new Error('locally backed off after upstream 429');
+      error.throttled = true;
+      throw error;
+    }
+    const url = new URL('https://api.511.org/transit/vehiclepositions');
+    url.searchParams.set('agency', 'RG');
+    url.searchParams.set('api_key', token());
+    const upstream = await fetch(url, { signal: AbortSignal.timeout(20000) });
+    if (upstream.status === 429) {
+      throttledUntil = Date.now() + backoffMs;
+      backoffMs = Math.min(backoffMs * 2, TRANSIT_BACKOFF_MAX_MS);
+      const error = new Error('upstream 429');
+      error.throttled = true;
+      throw error;
+    }
+    if (!upstream.ok) throw new Error(`upstream HTTP ${upstream.status}`);
+    const raw = Buffer.from(await upstream.arrayBuffer());
+    if (raw.length > MAX_RESPONSE_BYTES) throw new Error('upstream response too large');
+    const decoded = decodeVehiclePositions(raw);
+    // A successful decode is the only thing that clears the backoff ramp.
+    backoffMs = TRANSIT_BACKOFF_MIN_MS;
+    const fresh = {
+      at: Date.now(),
+      feedTimestamp: decoded.timestamp,
+      vehicles: railAndFerryOnly(decoded.vehicles),
+    };
+    mem = fresh;
+    void writeDisk(fresh);
+    return fresh;
+  }
+
+  function sendJson(res, status, body, cacheState) {
+    res.writeHead(status, {
+      'Content-Type': 'application/json',
+      'Cache-Control': 'no-store',
+      'X-GEV-Cache': cacheState,
+    });
+    res.end(JSON.stringify(body));
+  }
+
+  const payload = (entry, stale) => ({
+    fetchedAt: entry.at,
+    feedTimestamp: entry.feedTimestamp,
+    stale,
+    ttlMs: TTL_MS,
+    count: entry.vehicles.length,
+    vehicles: entry.vehicles,
+  });
+
+  function install(middlewares) {
+    middlewares.use('/api/transit/status', (req, res) => {
+      sendJson(res, 200, {
+        hasKey: Boolean(token()),
+        lastFetch: mem?.at ?? null,
+        count: mem?.vehicles?.length ?? 0,
+        stale: mem ? Date.now() - mem.at >= TTL_MS : true,
+        ttlMs: TTL_MS,
+        throttledUntil: throttledUntil || null,
+      }, 'NONE');
+    });
+
+    middlewares.use('/api/transit/vehicles', async (req, res) => {
+      if (req.method !== 'GET') {
+        sendJson(res, 405, { error: 'Method Not Allowed' }, 'NONE');
+        return;
+      }
+      if (!token()) {
+        sendJson(res, 503, { error: 'no_key' }, 'NONE');
+        return;
+      }
+      await readDiskOnce();
+      if (mem && Date.now() - mem.at < TTL_MS) {
+        sendJson(res, 200, payload(mem, false), 'HIT');
+        return;
+      }
+      const stale = mem;
+      const request = coalesceProxyRequest(inFlight, 'transit-vehicles', refreshUpstream);
+      try {
+        const fresh = await request.promise;
+        sendJson(res, 200, payload(fresh, false), request.shared ? 'INFLIGHT' : 'MISS');
+      } catch (error) {
+        if (stale) {
+          if (!request.shared) {
+            console.warn(`[transit-proxy] refresh failed (${error?.message || error}) — serving last good frame`);
+          }
+          sendJson(res, 200, payload(stale, true), error?.throttled ? 'STALE-THROTTLED' : 'STALE-ERROR');
+          return;
+        }
+        sendJson(res, error?.throttled ? 429 : 502, {
+          error: error?.throttled ? 'upstream_throttled' : 'upstream_unavailable',
+        }, 'NONE');
+      }
+    });
+  }
+
+  return {
+    name: 'transit-vehicles-proxy',
     configureServer(server) {
       install(server.middlewares);
     },
@@ -7346,6 +7549,7 @@ export default defineConfig(({ mode }) => {
       tomtomProxy(),
       firmsProxy(),
       rocketLaunchesProxy(),
+      transitVehiclesProxy(),
       terrainHeightsProxy(),
       adsbdbProxy(),
       overpassProxy(),
