@@ -30,6 +30,8 @@
  *     the system map; a colour value out of the data feed is neither.
  */
 
+import { coordinateField, integerField, textField } from './fieldGuards.js';
+
 /** "Leaving" sorts ahead of every numeric estimate. */
 const LEAVING_MINUTES = 0;
 
@@ -58,39 +60,8 @@ export function bartUrlFor(endpoint, cmd, apiKey, params = {}) {
   return url;
 }
 
-const text = (value) => {
-  const out = String(value ?? '').trim();
-  return out && out.toLowerCase() !== 'null' ? out : null;
-};
-
-/**
- * Number, or null.
- *
- * `Number(null)`, `Number('')` and `Number('   ')` are all 0, and 0 is both a
- * finite latitude and a plausible car count. Guarding the type first is the
- * only way a blank field fails instead of silently becoming zero — a blank
- * `gtfs_latitude` would otherwise place a station in the Gulf of Guinea.
- *
- * @param {*} value
- * @returns {number|null}
- */
-const numeric = (value) => {
-  if (typeof value !== 'number' && typeof value !== 'string') return null;
-  if (typeof value === 'string' && !value.trim()) return null;
-  const num = Number(value);
-  return Number.isFinite(num) ? num : null;
-};
-
-/**
- * Integer, or null. Same guard as `numeric`, so a missing car count does not
- * become a zero-car train.
- * @param {*} value
- * @returns {number|null}
- */
-const integer = (value) => {
-  const num = numeric(value);
-  return num !== null && Number.isInteger(num) ? num : null;
-};
+const text = textField;
+const integer = integerField;
 
 /** BART returns a bare object where a single-element array would be expected. */
 const asArray = (value) => {
@@ -128,11 +99,9 @@ export function normalizeStations(payload) {
   for (const row of rows) {
     const code = text(row?.abbr);
     const name = text(row?.name);
-    const latitude = numeric(row?.gtfs_latitude);
-    const longitude = numeric(row?.gtfs_longitude);
-    if (!code || !name) continue;
-    if (latitude === null || longitude === null) continue;
-    out.push({ code, name, latitude, longitude });
+    const position = coordinateField(row?.gtfs_latitude, row?.gtfs_longitude);
+    if (!code || !name || !position) continue;
+    out.push({ code, name, ...position });
   }
   return out;
 }
