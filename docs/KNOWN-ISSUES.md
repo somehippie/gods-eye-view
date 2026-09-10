@@ -11,6 +11,34 @@ of the public release.
 
 ## Open
 
+### transit-vehicles registers a sprite collection that is never ordered
+Status: Open (cosmetic / dead code)
+
+Context:
+- `transitVehicles.js` calls `registerSpriteCollection('transit-vehicles', ...)`
+  in `init()` and `restoreSpriteOrder(...)` in `init()`/`enable()`.
+- `SPRITE_LAYER_ORDER` in `spriteOrder.js` lists only cctv, firms, bikeshare,
+  ais, military and flights. `transit-vehicles` is not among them.
+- `restoreSpriteOrder` iterates `SPRITE_LAYER_ORDER` and raises each registered
+  collection to the top, so a collection registered under an unlisted id is
+  stored in the map and never acted on. The call currently does nothing.
+
+Consequence:
+- No visible bug today. Rail/ferry points simply keep whatever draw order they
+  received when added to the scene, rather than a declared one.
+- The hazard is that it reads as if ordering were handled. A future layer
+  copying this pattern would inherit a silent no-op.
+
+Fix candidates (not yet chosen):
+- Add `transit-vehicles` to `SPRITE_LAYER_ORDER` at the intended depth, or
+- Drop the two calls from `transitVehicles.js` so the file stops implying an
+  ordering guarantee it does not have.
+
+Deliberately not fixed alongside the direction-text change: picking a draw
+order is a rendering decision that deserves its own change and its own look at
+how the layer sits against ais/flights.
+
+
 ### Street traffic can be slow/uneven when panning across dense city blocks
 Status: Open (partially mitigated)
 

@@ -11,3 +11,6 @@ output/
 .DS_Store
 .gstack/
 3d-models/
+
+# Session scratch: handoff reports for review chats, not project content.
+handoff/
