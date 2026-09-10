@@ -51,3 +51,30 @@ test('empty / junk input returns NaN', () => {
   assert.ok(Number.isNaN(directionToHeading(null)));
   assert.ok(Number.isNaN(directionToHeading('somewhere', true)));
 });
+
+test('single-letter cardinals resolve in a dedicated direction field', () => {
+  // Amtrak's position feed reports heading as "N" / "SW" and nothing longer,
+  // so without these a dedicated direction field parsed to NaN.
+  assert.equal(directionToHeading('N', true), 0);
+  assert.equal(directionToHeading('S', true), 180);
+  assert.equal(directionToHeading('E', true), 90);
+  assert.equal(directionToHeading('W', true), 270);
+  // Intercardinals must still beat the single letters they contain.
+  assert.equal(directionToHeading('NE', true), 45);
+  assert.equal(directionToHeading('SW', true), 225);
+  assert.equal(directionToHeading('SE', true), 135);
+  assert.equal(directionToHeading('NW', true), 315);
+});
+
+test('REGRESSION: a lone cardinal letter in free-form text still does NOT resolve', () => {
+  // This is why the single letters live behind allowBare. "N LAMAR BLVD" is a
+  // street name; reading it as north would mis-orient a camera with confidence.
+  assert.ok(Number.isNaN(directionToHeading('N LAMAR BLVD')), 'N LAMAR is a street');
+  assert.ok(Number.isNaN(directionToHeading('E 7TH ST / I-35')), 'E 7TH is a street');
+  assert.ok(Number.isNaN(directionToHeading('W 35TH / MOPAC')), 'W 35TH is a street');
+});
+
+test('a single letter inside a word is not a heading, even with allowBare', () => {
+  assert.ok(Number.isNaN(directionToHeading('NORTHLAND', true)), 'no bare N inside NORTHLAND');
+  assert.ok(Number.isNaN(directionToHeading('SUNSET', true)), 'no bare S inside SUNSET');
+});

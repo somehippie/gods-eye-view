@@ -36,12 +36,16 @@ export function directionToHeading(value, allowBare = false) {
   if (/\bNORTHWEST\b|\bNW\b/.test(text)) return 315;
   if (/\bSOUTHEAST\b|\bSE\b/.test(text)) return 135;
   if (/\bSOUTHWEST\b|\bSW\b/.test(text)) return 225;
-  // Bare cardinals — dedicated direction fields only.
+  // Bare cardinals — dedicated direction fields only. Single letters included:
+  // Amtrak's position feed reports heading as "N" / "SW" and nothing longer, so
+  // without these a dedicated direction field parses to NaN. They stay behind
+  // allowBare because a lone "N" in free-form text is nearly always a street
+  // name ("N LAMAR BLVD"), which is the case the flag exists to guard against.
   if (allowBare) {
-    if (/\bNORTH\b/.test(text)) return 0;
-    if (/\bSOUTH\b/.test(text)) return 180;
-    if (/\bEAST\b/.test(text)) return 90;
-    if (/\bWEST\b/.test(text)) return 270;
+    if (/\bNORTH\b|\bN\b/.test(text)) return 0;
+    if (/\bSOUTH\b|\bS\b/.test(text)) return 180;
+    if (/\bEAST\b|\bE\b/.test(text)) return 90;
+    if (/\bWEST\b|\bW\b/.test(text)) return 270;
   }
   return NaN;
 }
