@@ -37,8 +37,27 @@ const IDENTIFIER_KEYS = Object.freeze([
   ['mmsi', (value) => `MMSI ${value}`],
   ['imo', (value) => `IMO ${value}`],
   ['national_id', (value) => `NID ${value}`],
+  ['vehicleId', (value) => `VEH ${value}`],
+  ['tripId', (value) => `Trip ${value}`],
   ['operator', (value) => String(value)],
 ]);
+
+/**
+ * Does the label already say this, as a whole word?
+ *
+ * A transit label is built from the line and the fleet number ("Caltrain Local
+ * Weekday 144"), so the vehicle id it came from would otherwise be appended
+ * right back onto it. Token equality, not substring: MMSI 123 must still
+ * survive a label that happens to contain "1234".
+ *
+ * @param {string} label
+ * @param {string} value
+ * @returns {boolean}
+ */
+function labelAlreadySays(label, value) {
+  const needle = value.toLowerCase();
+  return label.toLowerCase().split(/\s+/).includes(needle);
+}
 
 const MAX_IDENTIFIERS = 3;
 
@@ -113,8 +132,10 @@ export function formatSelectionForCopy(record) {
     if (identifiers.length >= MAX_IDENTIFIERS) break;
     const value = clean(properties[key]);
     // Skip a value that merely repeats the label — `operator === name` is
-    // common in the OSM-derived sets and adds nothing to a search.
+    // common in the OSM-derived sets, and a transit label already carries the
+    // fleet number. Neither adds anything to a search.
     if (!value || value.toLowerCase() === label.toLowerCase()) continue;
+    if (labelAlreadySays(label, value)) continue;
     identifiers.push(format(value));
   }
 

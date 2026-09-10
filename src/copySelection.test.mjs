@@ -50,6 +50,36 @@ test('a record without a label copies nothing rather than a bare coordinate', ()
   assert.equal(formatSelectionForCopy(null), '');
 });
 
+test('a train copies the trip that pins the run, not the label back to itself', () => {
+  // The transit label is built from operator + line + fleet number, so the
+  // vehicle id and operator are already in it. The trip id is the part that
+  // identifies THIS run and is the only one worth appending.
+  assert.equal(
+    formatSelectionForCopy({
+      label: 'Caltrain Local Weekday 144',
+      layerName: 'Rail & Ferry',
+      source: '511.org',
+      latitude: 37.3736,
+      longitude: -122.0149,
+      properties: { vehicleId: '144', tripId: '1234', operator: 'Caltrain', mode: 'rail' },
+    }),
+    'Caltrain Local Weekday 144 · Trip 1234 · Rail & Ferry (511.org) · 37.37360, -122.01490',
+  );
+});
+
+test('token dedup does not swallow an identifier that is merely a substring', () => {
+  // "123" must survive a label containing "1234" — the guard is whole-word.
+  const line = formatSelectionForCopy({
+    label: 'Ship 1234',
+    layerName: 'Live AIS Vessels',
+    source: 'AISStream',
+    latitude: 37.8,
+    longitude: -122.4,
+    properties: { mmsi: '123' },
+  });
+  assert.equal(line, 'Ship 1234 · MMSI 123 · Live AIS Vessels (AISStream) · 37.80000, -122.40000');
+});
+
 test('a record missing coordinates still copies its identity', () => {
   assert.equal(
     formatSelectionForCopy({ label: 'Bethel Island', layerName: 'Delta Levees', source: 'CA DWR' }),
