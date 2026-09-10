@@ -42,6 +42,12 @@ import {
 } from './src/data/tomtomTiles.js';
 import { filterTrailing24h, parseFirmsCsv } from './src/data/firmsCsv.js';
 import { decodeVehiclePositions, railAndFerryOnly } from './src/data/gtfsRealtime.js';
+import {
+  bartUrlFor,
+  mergeStationDepartures,
+  normalizeDepartures,
+  normalizeStations,
+} from './src/data/bartEtd.js';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
 import { defineConfig, loadEnv } from 'vite';
@@ -1754,6 +1760,54 @@ const TRANSIT_BACKOFF_MIN_MS = 60_000;
 /** Backoff ceiling, so a long throttle still recovers on its own. */
 const TRANSIT_BACKOFF_MAX_MS = 15 * 60_000;
 
+// --- BART station departures -----------------------------------------------
+
+/**
+ * Milliseconds between upstream ETD polls, and therefore the cache TTL.
+ *
+ * MEASURED: the feed regenerates about every 15 s — 15 requests over 150 s saw
+ * its `time` field advance in 15 s steps and produced 9 distinct payloads. It
+ * returned no 429, and no rate-limit header of any kind.
+ *
+ * 30 s rather than 15 s because the board displays a countdown in whole
+ * minutes: matching the feed exactly would double the request count to refresh
+ * a number that mostly has not changed. 60 s was rejected because a train's
+ * entire "Leaving" state can pass inside one interval, and "Leaving" is the row
+ * a person on a platform actually cares about.
+ *
+ * BART publishes no rate limit, so this is courtesy against their developer
+ * programme's "don't hog community resources", not compliance with a number.
+ */
+const BART_POLL_MS = 30_000;
+
+/**
+ * Station geography changes on the order of once a year, so it is fetched once
+ * and cached to disk for a week. It is a separate endpoint from the ETD feed.
+ */
+const BART_STATIONS_TTL_MS = 7 * 24 * 60 * 60_000;
+
+/** First backoff step after an upstream refusal; doubles per consecutive one. */
+const BART_BACKOFF_MIN_MS = 60_000;
+/** Backoff ceiling, so a long outage still recovers on its own. */
+const BART_BACKOFF_MAX_MS = 15 * 60_000;
+
+/**
+ * BART's PUBLIC demo key. This is not a leaked secret and not a mistake.
+ *
+ * BART publishes this exact value in its own developer documentation as the
+ * open key for the legacy API — there is no registration step and no signup
+ * wall. Their docs do recommend requesting a personal key, not for access but
+ * so you receive change notices and so your application keeps working if the
+ * public key is ever rotated.
+ *
+ * PREFER `BART_API_KEY` in .env. This constant is the fallback that makes the
+ * layer work on a fresh clone with no configuration.
+ */
+const BART_PUBLIC_DEMO_KEY = 'MW9S-E7SL-26DU-VV8V';
+
+/** Identifies this app to BART, matching the Nominatim proxy's format. */
+const BART_USER_AGENT = 'GodsEyeView/0.1 (+https://github.com/bilawalsidhu/gods-eye-view)';
+
 /**
  * Vite plugin: 511.org live rail and ferry positions for the Bay Area.
  *
@@ -1914,6 +1968,226 @@ function transitVehiclesProxy() {
 
   return {
     name: 'transit-vehicles-proxy',
+    configureServer(server) {
+      install(server.middlewares);
+    },
+    configurePreviewServer(server) {
+      install(server.middlewares);
+    },
+  };
+}
+
+/**
+ * Vite plugin: BART station departures.
+ *
+ * TWO upstream endpoints, on very different clocks. `stn.aspx?cmd=stns` is the
+ * 50-station geography and is cached for a week; `etd.aspx?cmd=etd&orig=ALL` is
+ * the live board and is cached for BART_POLL_MS. Both are merged server-side so
+ * the client receives one array of stations, each carrying its departures.
+ *
+ * THE MERGE IS THE POINT. A station with no service is omitted from the ETD
+ * feed entirely rather than returned empty — 44 of 50 reported at 00:49 PDT,
+ * 7 at 01:49, none overnight. Serving only what ETD returned would make 43
+ * stations vanish from the map at 2 a.m. Merging onto the station list keeps
+ * the geography and lets the renderer draw a closed station dimmed.
+ *
+ * NO POSITIONS. BART publishes no vehicle positions anywhere — its GTFS-RT
+ * vehicle endpoint is a 404 and its trip feed carries zero VehiclePosition
+ * entities. Nothing here interpolates a train onto a line; a departure is
+ * attributed to the station that reported it and nowhere else.
+ *
+ * Licence: BART grants use, reproduction and redistribution of its data, and
+ * forbids its trademarks and copyrighted materials in association with it.
+ * That means no logo and no system map. Line colours come from the feed's own
+ * `hexcolor` field, which is data rather than either of those.
+ *
+ * Routes:
+ *   GET /api/rail/bart        → {fetchedAt, stale, ttlMs, count, open, stations}
+ *   GET /api/rail/bart/status → {lastFetch, count, stale, ttlMs, throttledUntil}
+ *
+ * @returns {import('vite').Plugin}
+ */
+function bartDeparturesProxy() {
+  const TTL_MS = BART_POLL_MS;
+  const MAX_RESPONSE_BYTES = 4 * 1024 * 1024;
+  const CACHE_PATH = path.join(process.cwd(), '.gev-cache', 'bart-departures.json');
+  const STATIONS_CACHE_PATH = path.join(process.cwd(), '.gev-cache', 'bart-stations.json');
+
+  /** @type {?{at: number, stations: Array<object>}} */
+  let mem = null;
+  /** @type {?{at: number, stations: Array<object>}} Station geography. */
+  let stationsMem = null;
+  let diskChecked = false;
+  const inFlight = new Map();
+  let throttledUntil = 0;
+  let backoffMs = BART_BACKOFF_MIN_MS;
+
+  // Prefer a personal key so the operator gets BART's change notices; fall back
+  // to the published demo key so a fresh clone works with no configuration.
+  const key = () => String(process.env.BART_API_KEY || '').trim() || BART_PUBLIC_DEMO_KEY;
+
+  /**
+   * Build a BART API URL.
+   *
+   * `params` is not optional decoration: `etd.aspx` REQUIRES `orig`, and
+   * omitting it answers 400 `{"error":{"text":"Invalid orig"}}` rather than
+   * defaulting to anything. That mistake shipped past 21 green unit tests
+   * because they all exercise the normalizer and none builds a URL — which is
+   * why bartUrlFor is exported and asserted in bartProxy.test.mjs.
+   */
+  const bartUrl = (endpoint, cmd, params = {}) => bartUrlFor(endpoint, cmd, key(), params);
+
+  async function fetchJson(url) {
+    const upstream = await fetch(url, {
+      headers: { Accept: 'application/json', 'User-Agent': BART_USER_AGENT },
+      signal: AbortSignal.timeout(20000),
+    });
+    if (upstream.status === 429 || upstream.status === 403) {
+      throttledUntil = Date.now() + backoffMs;
+      backoffMs = Math.min(backoffMs * 2, BART_BACKOFF_MAX_MS);
+      const error = new Error(`upstream ${upstream.status}`);
+      error.throttled = true;
+      throw error;
+    }
+    if (!upstream.ok) throw new Error(`upstream HTTP ${upstream.status}`);
+    const body = await upstream.text();
+    if (body.length > MAX_RESPONSE_BYTES) throw new Error('upstream response too large');
+    return JSON.parse(body);
+  }
+
+  async function readDiskOnce() {
+    if (diskChecked) return;
+    diskChecked = true;
+    for (const [file, assign] of [
+      [STATIONS_CACHE_PATH, (parsed) => { stationsMem = parsed; }],
+      [CACHE_PATH, (parsed) => { mem = parsed; }],
+    ]) {
+      try {
+        const parsed = JSON.parse(await fsp.readFile(file, 'utf8'));
+        if (Number.isFinite(parsed?.at) && Array.isArray(parsed?.stations)) assign(parsed);
+      } catch { /* first run or invalid cache */ }
+    }
+  }
+
+  async function writeDisk(file, entry) {
+    try {
+      await fsp.mkdir(path.dirname(file), { recursive: true });
+      await fsp.writeFile(file, JSON.stringify(entry), 'utf8');
+    } catch (error) {
+      console.warn(`[bart-proxy] cache write failed: ${error?.message || error}`);
+    }
+  }
+
+  /** Station geography, from cache when it is less than a week old. */
+  async function stations() {
+    if (stationsMem && Date.now() - stationsMem.at < BART_STATIONS_TTL_MS) {
+      return stationsMem.stations;
+    }
+    try {
+      const list = normalizeStations(await fetchJson(bartUrl('stn.aspx', 'stns')));
+      if (list.length) {
+        stationsMem = { at: Date.now(), stations: list };
+        void writeDisk(STATIONS_CACHE_PATH, stationsMem);
+        return list;
+      }
+    } catch (error) {
+      // A stale station list is far better than none — geography barely moves.
+      if (stationsMem) {
+        console.warn(`[bart-proxy] station list refresh failed (${error?.message || error}) — using cached geography`);
+        return stationsMem.stations;
+      }
+      throw error;
+    }
+    if (stationsMem) return stationsMem.stations;
+    throw new Error('station list empty');
+  }
+
+  async function refreshUpstream() {
+    if (Date.now() < throttledUntil) {
+      const error = new Error('locally backed off after an upstream refusal');
+      error.throttled = true;
+      throw error;
+    }
+    const geography = await stations();
+    // orig=ALL is REQUIRED. Without it BART answers 400 "Invalid orig".
+    const departures = normalizeDepartures(
+      await fetchJson(bartUrl('etd.aspx', 'etd', { orig: 'ALL' })),
+    );
+    backoffMs = BART_BACKOFF_MIN_MS;
+    const fresh = { at: Date.now(), stations: mergeStationDepartures(geography, departures) };
+    mem = fresh;
+    void writeDisk(CACHE_PATH, fresh);
+    return fresh;
+  }
+
+  function sendJson(res, status, body, cacheState) {
+    res.writeHead(status, {
+      'Content-Type': 'application/json',
+      'Cache-Control': 'no-store',
+      'X-GEV-Cache': cacheState,
+    });
+    res.end(JSON.stringify(body));
+  }
+
+  const payload = (entry, stale) => ({
+    fetchedAt: entry.at,
+    stale,
+    ttlMs: TTL_MS,
+    count: entry.stations.length,
+    open: entry.stations.filter((station) => station.departures.length > 0).length,
+    stations: entry.stations,
+  });
+
+  function install(middlewares) {
+    // Prefix match: the more specific route has to be registered first.
+    middlewares.use('/api/rail/bart/status', (req, res) => {
+      sendJson(res, 200, {
+        lastFetch: mem?.at ?? null,
+        count: mem?.stations?.length ?? 0,
+        stale: mem ? Date.now() - mem.at >= TTL_MS : true,
+        ttlMs: TTL_MS,
+        throttledUntil: throttledUntil || null,
+      }, 'NONE');
+    });
+
+    middlewares.use('/api/rail/bart', async (req, res) => {
+      if (req.method !== 'GET') {
+        sendJson(res, 405, { error: 'Method Not Allowed' }, 'NONE');
+        return;
+      }
+      await readDiskOnce();
+      if (mem && Date.now() - mem.at < TTL_MS) {
+        sendJson(res, 200, payload(mem, false), 'HIT');
+        return;
+      }
+      const stale = mem;
+      const request = coalesceProxyRequest(inFlight, 'bart-departures', refreshUpstream);
+      try {
+        const fresh = await request.promise;
+        sendJson(res, 200, payload(fresh, false), request.shared ? 'INFLIGHT' : 'MISS');
+      } catch (error) {
+        if (stale) {
+          if (!request.shared) {
+            console.warn(`[bart-proxy] refresh failed (${error?.message || error}) — serving last good frame`);
+          }
+          sendJson(res, 200, payload(stale, true), error?.throttled ? 'STALE-THROTTLED' : 'STALE-ERROR');
+          return;
+        }
+        // Log the COLD failure too. The serve-stale branch above logs, but on a
+        // first run there is no stale frame, so the original version answered
+        // 502 in total silence — which is exactly when a diagnosis is needed.
+        if (!request.shared) {
+          console.warn(`[bart-proxy] refresh failed with no cached frame: ${error?.message || error}`);
+        }
+        sendJson(res, error?.throttled ? 429 : 502, {
+          error: error?.throttled ? 'upstream_throttled' : 'upstream_unavailable',
+        }, 'NONE');
+      }
+    });
+  }
+
+  return {
+    name: 'bart-departures-proxy',
     configureServer(server) {
       install(server.middlewares);
     },
@@ -7550,6 +7824,7 @@ export default defineConfig(({ mode }) => {
       firmsProxy(),
       rocketLaunchesProxy(),
       transitVehiclesProxy(),
+      bartDeparturesProxy(),
       terrainHeightsProxy(),
       adsbdbProxy(),
       overpassProxy(),

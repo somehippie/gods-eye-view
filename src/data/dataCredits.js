@@ -160,6 +160,14 @@ export const DATA_CREDITS = [
       '(MTC), via each operator’s GTFS-Realtime feed',
   },
   {
+    key: 'bart-departures',
+    html:
+      'BART station departures: ' +
+      '<a href="https://www.bart.gov/schedules/developers/api" target="_blank" rel="noopener">Bay Area Rapid Transit</a> ' +
+      'legacy API, under BART’s Developer License Agreement. ' +
+      'No BART trademark, logo or system map is used.',
+  },
+  {
     key: 'radio-browser',
     html:
       'Internet-radio station directory: ' +
