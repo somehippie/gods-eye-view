@@ -11,6 +11,39 @@ of the public release.
 
 ## Open
 
+### Amtrak branch has three prerequisites before it can merge
+Status: Open (blocked on permission; work items recorded)
+
+The branch `amtrak-parked-pending-permission` holds a complete, working Amtrak
+layer. It is blocked on a permission answer from amtraker@piemadd.com — see
+DEVLOG, 2026-09-10. Three things must ALSO be done before it merges, all of
+which landed on `delta-water-layers` after that branch was cut, so it would
+otherwise merge with a weaker seam than the layer that came after it:
+
+1. **Route it through `capabilityGate` plus the consecutive-failure latch.**
+   Both exist now (`recordTransientFailure` / `recordCapabilitySuccess`) and
+   `bartDepartures.js` is the worked example. As the branch stands, a mirror
+   that disappears logs a warning on every poll forever — and this upstream is
+   a volunteer's server with no SLA, so that is the likely failure, not a
+   hypothetical one.
+
+2. **Migrate `amtrakFeed.js` to `fieldGuards.js`.** It carries its own local
+   typeof/finite guard, written in response to the same `Number('') === 0` bug
+   that `fieldGuards` now exists to prevent centrally. Add `amtrakFeed.js` to
+   `GUARDED_PARSERS` in `fieldGuards.test.mjs` at the same time, which is what
+   actually enforces it.
+
+3. **Give the Amtrak proxy the boundary tests BART has.** Same extract-and-
+   export step: export the proxy factory, drive it with `fetch` stubbed by a
+   recorded fixture, assert what it requested as well as what it served. BART
+   shipped a broken URL past 21 green unit tests precisely because that seam
+   was untested; the Amtrak proxy has the identical untested seam today.
+
+The same generalisation is worth doing for the 511 proxy, which is already
+merged and has no boundary coverage either. That one is not blocked on
+anything.
+
+
 ### BART departure board cap of 8 has never engaged on real data
 Status: Open (unverified threshold)
 
