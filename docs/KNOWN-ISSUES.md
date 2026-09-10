@@ -11,6 +11,39 @@ of the public release.
 
 ## Open
 
+### BART departure board cap of 8 has never engaged on real data
+Status: Open (unverified threshold)
+
+Context:
+- `MAX_BOARD_ROWS` in `bartDepartures.js` caps the selected station's board at
+  8 rows, so a busy transfer station cannot run its board off the screen.
+- Every frame observed while building the layer was late-night. The busiest
+  single station seen had **4** departures (19th St. Oakland, 00:49 PDT);
+  system-wide totals were 97 departures at 00:49, 7 at 01:49, 2 at 02:20.
+- The cap has therefore never actually truncated anything. 8 is a guess sized
+  off the feed's shape (up to 3 destinations x up to 3 estimates), not a
+  measurement.
+
+What could be wrong:
+- Too low: a rush-hour transfer station truncates real departures with no
+  indication that rows were dropped. There is currently no "+N more" row.
+- Too high: 8 rows at 14px is ~112px of label stack, which may overlap
+  neighbouring stations in dense downtown SF at low zoom.
+
+How to verify (weekday, ~08:00 or ~17:30 PDT):
+- Fastest, no UI:
+
+      curl -s localhost:4173/api/rail/bart | node -e "let d='';process.stdin.on('data',c=>d+=c).on('end',()=>{const j=JSON.parse(d);const s=j.stations.map(x=>[x.departures.length,x.name]).sort((a,b)=>b[0]-a[0]);console.log('open',j.open,'of',j.count);console.log(s.slice(0,8).map(r=>r[0]+'  '+r[1]).join('
+'));})"
+
+  If the top number reaches or exceeds 8, the cap is engaging.
+- In the app: enable the layer and click a multi-line transfer station —
+  MacArthur, 19th St. Oakland, 12th St. Oakland City Center, Embarcadero,
+  Montgomery, Powell, Civic Center. Those carry the most lines.
+- Check both: whether rows are being dropped, and whether the stack visually
+  collides with adjacent station dots at city zoom.
+
+
 ### transit-vehicles registers a sprite collection that is never ordered
 Status: Open (cosmetic / dead code)
 
