@@ -1,6 +1,42 @@
 import * as Cesium from 'cesium';
 
 /**
+ * ⚠️ MERGE HAZARD — CHECK THE ENTRY COUNT AFTER ANY MERGE, NOT JUST THE DIFF.
+ *
+ * DATA_CREDITS is a flat array of object literals that all share one key
+ * namespace. A conflict boundary can therefore land INSIDE one object rather
+ * than between two — and when it does, resolving it by keeping both sides is
+ * silently destructive:
+ *
+ *   {
+ *     key: 'layer-a',  html: '…A…',
+ *     key: 'layer-b',  html: '…B…',   // ← one object, duplicate keys, B wins
+ *   }
+ *
+ * Valid JavaScript. Parses. Reads as a clean "kept both sides" in the diff.
+ * Layer A's attribution is gone.
+ *
+ * This is not hypothetical. It happened on the 2026-09-13 Amtrak merge: BART's
+ * credit — carrying the Developer License Agreement notice its licence
+ * requires — was deleted exactly this way. Nothing failed. The file parsed, the
+ * tests passed, and the diff looked like both entries had been kept. It was
+ * caught only by asserting the array length.
+ *
+ * These entries are legal obligations, not documentation, so a silently
+ * dropped one is a licence breach that ships looking healthy.
+ *
+ * AFTER MERGING THIS FILE, verify identity and not just syntax:
+ *
+ *   node --input-type=module -e "import('./src/data/dataCredits.js').then(m=>{
+ *     const k = m.DATA_CREDITS.map(x => x.key);
+ *     console.log(k.length, k.filter((x,i) => k.indexOf(x) !== i));
+ *   })"
+ *
+ * Expect the full count and an empty duplicate list. The same hazard applies to
+ * any keyed-object list in this repo — layerState.js among them.
+ */
+
+/**
  * Per-layer data attribution registered into Cesium's credit display.
  *
  * Legal requirement (see DATA_SOURCES.md, findings H10/H11 in
