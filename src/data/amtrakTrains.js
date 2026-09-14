@@ -219,6 +219,54 @@ function render(trains) {
   repaintSelection();
 }
 
+/**
+ * ODC-By attribution, on screen, bottom-right, only while the layer is on.
+ *
+ * REQUIRED, not decorative. The Amtraker data is licensed ODC-By 1.0, and
+ * api.amtraker.com/docs is specific about both the content and the placement:
+ * users must be made aware the data originates from Amtraker, for an
+ * interactive map the notice belongs in the bottom right corner, and it must
+ * NOT be hidden in settings or an FAQ.
+ *
+ * That last clause is why this is a dedicated element rather than another
+ * registerDataCredits entry. Those are added with showOnScreen=false and live
+ * inside the collapsed "Data attribution" popover — appropriate for sources
+ * whose licences allow it, and not compliant here.
+ *
+ * Bottom-LEFT is deliberately untouched: #cesium-credits carries the Google
+ * Maps / 3D Tiles credit that Google's ToS requires be visible, and moving or
+ * sharing it to satisfy a second licence would put the first at risk.
+ *
+ * Sits above the GEV MIC pill (right:36/bottom:36) rather than on top of it.
+ */
+const ATTRIBUTION_ID = 'amtrak-attribution';
+
+function showAttribution() {
+  if (typeof document === 'undefined') return;
+  let el = document.getElementById(ATTRIBUTION_ID);
+  if (!el) {
+    el = document.createElement('div');
+    el.id = ATTRIBUTION_ID;
+    el.innerHTML =
+      'Train positions from '
+      + '<a href="https://amtraker.com/" target="_blank" rel="noopener">Amtraker</a>'
+      + ' · <a href="https://opendatacommons.org/licenses/by/1-0/" target="_blank" rel="noopener">ODC-By 1.0</a>';
+    document.body.appendChild(el);
+  }
+  el.hidden = false;
+}
+
+function hideAttribution() {
+  if (typeof document === 'undefined') return;
+  const el = document.getElementById(ATTRIBUTION_ID);
+  if (el) el.hidden = true;
+}
+
+function removeAttribution() {
+  if (typeof document === 'undefined') return;
+  document.getElementById(ATTRIBUTION_ID)?.remove();
+}
+
 const amtrakTrainsLayer = {
   id: 'amtrak-trains',
   name: 'Amtrak',
@@ -249,6 +297,7 @@ const amtrakTrainsLayer = {
     _enabled = true;
     if (_collection) _collection.show = true;
     if (_labels) _labels.show = true;
+    showAttribution();
     return this.update();
   },
 
@@ -256,6 +305,7 @@ const amtrakTrainsLayer = {
     _enabled = false;
     if (_collection) _collection.show = false;
     if (_labels) _labels.show = false;
+    hideAttribution();
     clearSelection();
   },
 
@@ -292,6 +342,7 @@ const amtrakTrainsLayer = {
   destroy(viewer) {
     const scene = (viewer || _viewer)?.scene;
     document.removeEventListener('keydown', _onKeyDown);
+    removeAttribution();
     if (_clickHandler) {
       _clickHandler.destroy();
       _clickHandler = null;

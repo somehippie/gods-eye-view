@@ -170,10 +170,14 @@ export const DATA_CREDITS = [
   {
     key: 'amtrak-trains',
     html:
-      'Amtrak train positions: data originates with ' +
-      '<a href="https://www.amtrak.com/track-your-train-with-google-maps" target="_blank" rel="noopener">Amtrak</a>, ' +
-      'read via the community-decrypted mirror at ' +
-      '<a href="https://amtraker.com/" target="_blank" rel="noopener">amtraker.com</a>',
+      'Amtrak train positions: content obtained from the ' +
+      '<a href="https://amtraker.com/" target="_blank" rel="noopener">Amtraker</a> database, ' +
+      'licensed under ' +
+      '<a href="https://opendatacommons.org/licenses/by/1-0/" target="_blank" rel="noopener">ODC-By 1.0</a>. ' +
+      'Data originates with ' +
+      '<a href="https://www.amtrak.com/track-your-train-with-google-maps" target="_blank" rel="noopener">Amtrak</a> ' +
+      'and is read via Amtraker’s community-decrypted mirror. ' +
+      'The required on-screen notice is the bottom-right element, not this entry.',
   },
   {
     key: 'radio-browser',

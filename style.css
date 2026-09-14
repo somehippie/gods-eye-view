@@ -9543,3 +9543,33 @@ body.scene-playback-mode #key-setup {
   border-color: rgba(255, 170, 150, 0.65);
   outline: none;
 }
+
+/* Amtraker ODC-By attribution — REQUIRED on screen, bottom-right.
+   api.amtraker.com/docs: for an interactive map the notice belongs in the
+   bottom right corner and must not be hidden in settings or an FAQ, so this is
+   a dedicated always-visible element rather than a registerDataCredits entry
+   (those render with showOnScreen=false inside the collapsed popover).
+   Shown only while the Amtrak layer is enabled — see src/data/amtrakTrains.js.
+   Sits ABOVE the GEV mic pill (right:36/bottom:36) rather than over it, and
+   deliberately does not touch #cesium-credits at bottom-left, which carries the
+   Google ToS-mandated credit. */
+#amtrak-attribution {
+  position: fixed;
+  right: 36px;
+  bottom: 84px;
+  z-index: 5;
+  padding: 3px 8px;
+  border-radius: 3px;
+  background: rgba(8, 12, 18, 0.62);
+  border: 1px solid rgba(120, 150, 175, 0.22);
+  font: 10px/1.4 ui-monospace, Menlo, Consolas, monospace;
+  color: rgba(200, 218, 232, 0.78);
+  letter-spacing: 0.02em;
+  pointer-events: auto;
+  user-select: none;
+}
+#amtrak-attribution a {
+  color: rgba(150, 200, 235, 0.92);
+  text-decoration: none;
+}
+#amtrak-attribution a:hover { text-decoration: underline; }
