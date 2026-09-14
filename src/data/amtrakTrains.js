@@ -24,6 +24,12 @@
 import * as Cesium from 'cesium';
 import { registerEntityContext, selectEntityContext } from './contextStore.js';
 import { normalizeAmtrakTrains, runningTrains, trainLabel } from './amtrakFeed.js';
+import {
+  isCapabilityAvailable,
+  markCapabilityUnavailable,
+  recordCapabilitySuccess,
+  recordTransientFailure,
+} from '../capabilityGate.js';
 
 /**
  * Client refresh cadence.
@@ -37,6 +43,15 @@ import { normalizeAmtrakTrains, runningTrains, trainLabel } from './amtrakFeed.j
 const POLL_MS = 120_000;
 /** Endpoint installed by amtrakTrainsProxy in vite.config.js. */
 const ENDPOINT = '/api/rail/amtrak';
+/**
+ * Name this layer latches under in the capability gate.
+ *
+ * This upstream is a volunteer-run mirror with no SLA and no funding, so it
+ * going away is the expected end state rather than a hypothetical. Without the
+ * gate, that day turns into a console warning every 120 s for as long as the
+ * tab stays open.
+ */
+const CAPABILITY = 'Amtrak trains';
 
 /** Fallback when the feed omits a route colour. Measured: 0 of 59 did. */
 const DEFAULT_COLOR = Cesium.Color.fromCssColorString('#9fb4c7');
@@ -311,18 +326,42 @@ const amtrakTrainsLayer = {
 
   async update() {
     if (!_enabled) return;
+    // Latched off: the mirror is gone or is refusing us, and has already said so
+    // once. Stop asking — that is the whole contract of the gate.
+    if (!isCapabilityAvailable(CAPABILITY)) return;
     _loading = true;
     try {
       const response = await fetch(ENDPOINT);
-      if (!response.ok) throw new Error(`proxy HTTP ${response.status}`);
+      if (!response.ok) {
+        // No key to set, unlike BART — so the remedy is about reachability and
+        // about the User-Agent, which is the one thing on our side that can get
+        // us refused. api.amtraker.com/docs: a request without one is blocked.
+        const remedy = 'check api-v3.amtraker.com is reachable and that the proxy '
+          + 'still sends a valid User-Agent';
+        if (response.status === 403) {
+          // Configuration, not weather. A 403 here means the mirror is refusing
+          // this client specifically, and polling harder will not change that.
+          markCapabilityUnavailable(CAPABILITY, `HTTP ${response.status}`, remedy);
+        } else {
+          // Transient — until it is not. Latches after five in a row, so a
+          // retired mirror stops logging instead of warning on every poll.
+          recordTransientFailure(CAPABILITY, `HTTP ${response.status}`, remedy);
+        }
+        throw new Error(`proxy HTTP ${response.status}`);
+      }
       const payload = await response.json();
+      recordCapabilitySuccess(CAPABILITY);
       _error = null;
       _lastUpdate = Date.now();
       const trains = Array.isArray(payload.trains) ? payload.trains : [];
       render(runningTrains(trains, Date.now()));
     } catch (error) {
       _error = error?.message || String(error);
-      console.warn('[Data:amtrak-trains] update failed', _error);
+      // Only speak while the capability is still considered live. Once latched,
+      // the gate has already logged the one message that matters.
+      if (isCapabilityAvailable(CAPABILITY)) {
+        console.warn('[Data:amtrak-trains] update failed', _error);
+      }
     } finally {
       _loading = false;
     }
