@@ -2301,12 +2301,25 @@ const AMTRAK_BACKOFF_MIN_MS = 5 * 60_000;
 const AMTRAK_BACKOFF_MAX_MS = 30 * 60_000;
 
 /**
- * Identifies this app to the upstream host, matching the Nominatim proxy.
+ * Identifies THIS INTEGRATION to Amtraker — not the host application.
  *
- * A community endpoint's operator can only tell polite traffic from abuse by
- * what the client calls itself, so this carries a project URL to complain to.
+ * A User-Agent is mandatory here, not courtesy: api.amtraker.com/docs states
+ * that a request without one is blocked outright.
+ *
+ * CORRECTED after the maintainer wrote back. The original value was
+ * `GodsEyeView/0.1 (+https://github.com/bilawalsidhu/gods-eye-view)`, copied
+ * from the Nominatim proxy, and it was wrong twice over. It announced the host
+ * application rather than this specific integration, and its contact pointed at
+ * the UPSTREAM repository this project is derived from — so an operator trying
+ * to reach whoever was polling them would have reached a stranger. The whole
+ * point of the header is reachability, and it was unreachable.
+ *
+ * Format follows the five sibling proxies in this file
+ * (gods-eye-view-<service>-proxy/<version>) with a contact address appended, as
+ * the maintainer asked. The address is a plus-alias so it stays filterable and
+ * the operator's primary address is not the one in a third party's logs.
  */
-const AMTRAK_USER_AGENT = 'GodsEyeView/0.1 (+https://github.com/bilawalsidhu/gods-eye-view)';
+const AMTRAK_USER_AGENT = 'gods-eye-view-amtrak-proxy/0.1 (+https://github.com/somehippie/gods-eye-view)';
 
 /**
  * Vite plugin: live Amtrak train positions, nationwide.
