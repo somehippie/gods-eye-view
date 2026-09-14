@@ -10,56 +10,18 @@ For the roadmap and open backlog, see the repository issue tracker.
 
 ## Open
 
-### Amtrak layer merged with one prerequisite still outstanding
-Status: Open (1 of 3 not done, 1 of 3 half done — merged anyway, 2026-09-14)
+### 511 transit-vehicles proxy has no boundary coverage
+Status: Open (not blocked on anything)
 
-**Permission is no longer the blocker** — granted by email 2026-09-14, see DEVLOG.
-The layer merged to `delta-water-layers` that day. Two of the three
-prerequisites below were done in that merge; **one was missed and one was only
-half done**, and the entry stays open until they are closed:
+Carried out of the Amtrak prerequisites entry when that closed, because it was
+never an Amtrak item and would otherwise have been filed away with it.
 
-- **(1) capabilityGate — NOT DONE.** `amtrakTrains.js` has zero references to
-  `recordTransientFailure` / `recordCapabilitySuccess`. `bartDepartures.js` has
-  four. The failure this guards against is live in `main` now.
-- **(2) fieldGuards — HALF DONE.** The code was migrated (commit `ee13c33`), but
-  `GUARDED_PARSERS` in `fieldGuards.test.mjs` is still `['bartEtd.js']`.
-  Nothing stops a bare `Number(` being reintroduced into `amtrakFeed.js`.
-- **(3) boundary tests — DONE**, commit `80f3ad6`.
-
-Original text follows.
-
----
-
-Status (historical): Open (blocked on permission; work items recorded)
-
-The branch `amtrak-parked-pending-permission` holds a complete, working Amtrak
-layer. It is blocked on a permission answer from amtraker@piemadd.com — see
-DEVLOG, 2026-09-10. Three things must ALSO be done before it merges, all of
-which landed on `delta-water-layers` after that branch was cut, so it would
-otherwise merge with a weaker seam than the layer that came after it:
-
-1. **Route it through `capabilityGate` plus the consecutive-failure latch.**
-   Both exist now (`recordTransientFailure` / `recordCapabilitySuccess`) and
-   `bartDepartures.js` is the worked example. As the branch stands, a mirror
-   that disappears logs a warning on every poll forever — and this upstream is
-   a volunteer's server with no SLA, so that is the likely failure, not a
-   hypothetical one.
-
-2. **Migrate `amtrakFeed.js` to `fieldGuards.js`.** It carries its own local
-   typeof/finite guard, written in response to the same `Number('') === 0` bug
-   that `fieldGuards` now exists to prevent centrally. Add `amtrakFeed.js` to
-   `GUARDED_PARSERS` in `fieldGuards.test.mjs` at the same time, which is what
-   actually enforces it.
-
-3. **Give the Amtrak proxy the boundary tests BART has.** Same extract-and-
-   export step: export the proxy factory, drive it with `fetch` stubbed by a
-   recorded fixture, assert what it requested as well as what it served. BART
-   shipped a broken URL past 21 green unit tests precisely because that seam
-   was untested; the Amtrak proxy has the identical untested seam today.
-
-The same generalisation is worth doing for the 511 proxy, which is already
-merged and has no boundary coverage either. That one is not blocked on
-anything.
+`transitVehiclesProxy` in `vite.config.js` is neither exported nor driven by a
+test, so the seam where it meets 511 is uncovered — the same gap that shipped a
+broken BART url past 21 green unit tests, and an unasserted User-Agent past 17
+on Amtrak. `bartProxy.test.mjs` and `amtrakProxy.test.mjs` are both worked
+examples now; the step is export the factory, add an injectable `cacheDir`, and
+assert what it requested as well as what it served.
 
 
 ### BART departure board cap of 8 has never engaged on real data
@@ -212,6 +174,76 @@ been caught at write time by one assertion each. A defensive comment is a
 claim, and an unasserted claim is how these survive.
 
 ## Closed / Intentional (for clarity)
+
+### Amtrak layer: merged, and all three prerequisites closed
+Status: CLOSED 2026-09-14
+
+All three are done. Permission was granted by email the same day — see DEVLOG
+2026-09-14, which records the two research errors that reply corrected.
+
+- **(1) capabilityGate — DONE**, commit `2ca6ec7`. Latches the layer off when
+  the mirror stops answering, so a volunteer-run server going away no longer
+  logs a warning every 120 s for as long as the tab is open. Deliberately
+  diverges from `bartDepartures.js`: 403 latches, 503 does not, because Amtrak
+  has no key and a 503 from that host reads as downtime, not misconfiguration.
+- **(2) fieldGuards — DONE.** Code migrated in `ee13c33`; ENFORCEMENT added in
+  `639c94b`, which is the half that was missing. `amtrakFeed.js` is now in
+  `GUARDED_PARSERS`, and a bare numeric coercion there fails the suite —
+  verified by injecting one and watching it fail, then reverting.
+- **(3) boundary tests — DONE**, commit `80f3ad6`.
+
+Kept rather than deleted, because the middle of it is the useful part: the layer
+MERGED on 2026-09-14 with (1) not done and (2) only half done. This entry was
+wrong in one direction before the merge and wrong in the other direction for
+several hours after it. Both states follow.
+
+---
+
+
+**Permission is no longer the blocker** — granted by email 2026-09-14, see DEVLOG.
+The layer merged to `delta-water-layers` that day. Two of the three
+prerequisites below were done in that merge; **one was missed and one was only
+half done**, and the entry stays open until they are closed:
+
+- **(1) capabilityGate — NOT DONE.** `amtrakTrains.js` has zero references to
+  `recordTransientFailure` / `recordCapabilitySuccess`. `bartDepartures.js` has
+  four. The failure this guards against is live in `main` now.
+- **(2) fieldGuards — HALF DONE.** The code was migrated (commit `ee13c33`), but
+  `GUARDED_PARSERS` in `fieldGuards.test.mjs` is still `['bartEtd.js']`.
+  Nothing stops a bare `Number(` being reintroduced into `amtrakFeed.js`.
+- **(3) boundary tests — DONE**, commit `80f3ad6`.
+
+Original text follows.
+
+---
+
+Status (historical): Open (blocked on permission; work items recorded)
+
+The branch `amtrak-parked-pending-permission` holds a complete, working Amtrak
+layer. It is blocked on a permission answer from amtraker@piemadd.com — see
+DEVLOG, 2026-09-10. Three things must ALSO be done before it merges, all of
+which landed on `delta-water-layers` after that branch was cut, so it would
+otherwise merge with a weaker seam than the layer that came after it:
+
+1. **Route it through `capabilityGate` plus the consecutive-failure latch.**
+   Both exist now (`recordTransientFailure` / `recordCapabilitySuccess`) and
+   `bartDepartures.js` is the worked example. As the branch stands, a mirror
+   that disappears logs a warning on every poll forever — and this upstream is
+   a volunteer's server with no SLA, so that is the likely failure, not a
+   hypothetical one.
+
+2. **Migrate `amtrakFeed.js` to `fieldGuards.js`.** It carries its own local
+   typeof/finite guard, written in response to the same `Number('') === 0` bug
+   that `fieldGuards` now exists to prevent centrally. Add `amtrakFeed.js` to
+   `GUARDED_PARSERS` in `fieldGuards.test.mjs` at the same time, which is what
+   actually enforces it.
+
+3. **Give the Amtrak proxy the boundary tests BART has.** Same extract-and-
+   export step: export the proxy factory, drive it with `fetch` stubbed by a
+   recorded fixture, assert what it requested as well as what it served. BART
+   shipped a broken URL past 21 green unit tests precisely because that seam
+   was untested; the Amtrak proxy has the identical untested seam today.
+
 
 ### Proxy SSRF and error-surface hardening gaps
 Status: Closed as fixed on `main`
