@@ -27,6 +27,7 @@
  */
 
 import { directionToHeading } from './directionText.js';
+import { coordinateField, numericField, textField } from './fieldGuards.js';
 
 /**
  * A fix older than this is dropped as a train nobody is updating any more.
@@ -54,24 +55,11 @@ export const MAX_FIX_AGE_MS = 20 * 60_000;
  */
 export const RENDERED_STATES = Object.freeze(['Active']);
 
-const text = (value) => {
-  const out = String(value ?? '').trim();
-  return out && out.toLowerCase() !== 'null' ? out : null;
-};
-
-/**
- * Number, or null.
- *
- * The `typeof` guard is load-bearing: `Number(null)` and `Number('')` are both
- * 0, and 0 is a perfectly finite latitude. Without it a row with a null `lat`
- * renders a train in the Gulf of Guinea instead of being dropped.
- */
-const finite = (value) => {
-  if (typeof value !== 'number' && typeof value !== 'string') return null;
-  if (typeof value === 'string' && !value.trim()) return null;
-  const num = Number(value);
-  return Number.isFinite(num) ? num : null;
-};
+// Field parsing lives in fieldGuards.js, not here. The local `text` and
+// `finite` helpers this file used to carry were behaviourally identical to
+// textField and numericField, and predated the shared module — the same
+// Number(null) === 0 hazard they were written against is exactly what that
+// module exists to stop being re-solved per file.
 
 /**
  * Parse the feed's timestamp into epoch milliseconds.
@@ -103,15 +91,20 @@ export function normalizeAmtrakTrains(payload) {
     // -train response arriving bare would otherwise be silently dropped.
     for (const train of Array.isArray(group) ? group : [group]) {
       if (!train || typeof train !== 'object') continue;
-      const id = text(train.trainID);
-      const latitude = finite(train.lat);
-      const longitude = finite(train.lon);
-      if (!id || latitude === null || longitude === null) continue;
-      const headingText = text(train.heading);
+      const id = textField(train.trainID);
+      // coordinateField rather than two numericField calls: it also range-checks
+      // and rejects 0,0. That matters here specifically — the guard this file
+      // used to carry warned that a null lat "renders a train in the Gulf of
+      // Guinea", which is 0,0, but only stopped the null-to-zero coercion. A row
+      // carrying two genuine zeros still passed. Now it does not.
+      const point = coordinateField(train.lat, train.lon);
+      if (!id || !point) continue;
+      const { latitude, longitude } = point;
+      const headingText = textField(train.heading);
       out.push({
         id,
-        trainNumber: text(train.trainNum) ?? text(train.trainNumRaw),
-        routeName: text(train.routeName),
+        trainNumber: textField(train.trainNum) ?? textField(train.trainNumRaw),
+        routeName: textField(train.routeName),
         latitude,
         longitude,
         headingText,
@@ -120,14 +113,14 @@ export function normalizeAmtrakTrains(payload) {
         heading: Number.isFinite(directionToHeading(headingText, true))
           ? directionToHeading(headingText, true)
           : null,
-        speed: finite(train.velocity),
-        state: text(train.trainState),
-        timely: text(train.trainTimely),
-        originCode: text(train.origCode),
-        originName: text(train.origName),
-        destinationCode: text(train.destCode),
-        destinationName: text(train.destName),
-        color: text(train.iconColor),
+        speed: numericField(train.velocity),
+        state: textField(train.trainState),
+        timely: textField(train.trainTimely),
+        originCode: textField(train.origCode),
+        originName: textField(train.origName),
+        destinationCode: textField(train.destCode),
+        destinationName: textField(train.destName),
+        color: textField(train.iconColor),
         timestamp: parseFixTime(train.updatedAt),
       });
     }
@@ -176,7 +169,7 @@ export function runningTrains(trains, nowMs, maxAgeMs = MAX_FIX_AGE_MS, states =
 export function trainLabel(record) {
   const parts = [];
   const push = (value) => {
-    const item = text(value);
+    const item = textField(value);
     if (!item) return;
     // Token RUNS, not whole strings: several Amtrak services carry the number
     // inside the route name ("Acela 2150"), and a whole-string comparison would

@@ -68,6 +68,22 @@ test('a row without an id or a position is never normalized', () => {
   assert.deepEqual(trains.map((t) => t.id), ['4-1']);
 });
 
+test('a position that is real-looking but impossible is dropped, including 0,0', () => {
+  // The guard this module used to carry warned that a null lat "renders a train
+  // in the Gulf of Guinea" — 0,0 — but only stopped null coercing to zero. Two
+  // GENUINE zeros still passed it. coordinateField rejects the null island and
+  // range-checks besides, so these four rows are all unrenderable.
+  const trains = normalizeAmtrakTrains({
+    1: [
+      rawTrain({ trainID: 'nullisland-1', lat: 0, lon: 0 }),
+      rawTrain({ trainID: 'lat-oob-1', lat: 91, lon: -98.4 }),
+      rawTrain({ trainID: 'lon-oob-1', lat: 29.4, lon: 181 }),
+      rawTrain({ trainID: 'good-1' }),
+    ],
+  });
+  assert.deepEqual(trains.map((t) => t.id), ['good-1']);
+});
+
 test('a missing timestamp parses to null, never to NaN', () => {
   // A NaN here once reached a Math.max and reported epoch seconds as a fix age.
   assert.equal(parseFixTime(null), null);
