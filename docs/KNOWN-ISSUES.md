@@ -10,8 +10,27 @@ For the roadmap and open backlog, see the repository issue tracker.
 
 ## Open
 
-### Amtrak branch has three prerequisites before it can merge
-Status: Open (blocked on permission; work items recorded)
+### Amtrak layer merged with one prerequisite still outstanding
+Status: Open (1 of 3 not done, 1 of 3 half done — merged anyway, 2026-09-14)
+
+**Permission is no longer the blocker** — granted by email 2026-09-14, see DEVLOG.
+The layer merged to `delta-water-layers` that day. Two of the three
+prerequisites below were done in that merge; **one was missed and one was only
+half done**, and the entry stays open until they are closed:
+
+- **(1) capabilityGate — NOT DONE.** `amtrakTrains.js` has zero references to
+  `recordTransientFailure` / `recordCapabilitySuccess`. `bartDepartures.js` has
+  four. The failure this guards against is live in `main` now.
+- **(2) fieldGuards — HALF DONE.** The code was migrated (commit `ee13c33`), but
+  `GUARDED_PARSERS` in `fieldGuards.test.mjs` is still `['bartEtd.js']`.
+  Nothing stops a bare `Number(` being reintroduced into `amtrakFeed.js`.
+- **(3) boundary tests — DONE**, commit `80f3ad6`.
+
+Original text follows.
+
+---
+
+Status (historical): Open (blocked on permission; work items recorded)
 
 The branch `amtrak-parked-pending-permission` holds a complete, working Amtrak
 layer. It is blocked on a permission answer from amtraker@piemadd.com — see
@@ -156,6 +175,41 @@ Status: Open (owner-accepted 2026-07-08, documented)
   `docs/superpowers/reports/2026-07-08-height-datum-handover.md`.
 
 ---
+
+### A comment that describes a defence is not the same as a defence
+Status: Open (standing habit, not a bug)
+
+Three occurrences now of the same shape: **a comment states behaviour the code
+does not actually implement**, and nothing fails, because the tests exercise
+that the function runs rather than that the specific hazard the comment names
+is actually stopped.
+
+1. `amtrakFeed.js` — the local numeric guard's comment warned that a null
+   `lat` would "render a train in the Gulf of Guinea". That is 0,0. The guard
+   stopped `null` coercing to zero and did nothing about a row carrying two
+   *genuine* zeros, which passed straight through. Seventeen tests were green
+   over it; none covered the case the comment named. Found 2026-09-14 while
+   migrating to `coordinateField`, which does reject it.
+2. `vite.config.js` (Amtrak proxy) — "the non-running rows are dropped before
+   anything crosses the wire". They are not. `runningTrains` is applied
+   client-side, so Predeparture and Completed rows reach the browser. Not a
+   rendering fault, but the stated wire contract was wrong, and
+   `DATA_SOURCES.md` repeated it. Found 2026-09-14 when a boundary test written
+   *from the comment* failed against the code.
+3. `.env.example` — `CCTV_AUTO_CALIBRATE` and `CCTV_DRAPE_MESH` are
+   documented as "(client flag)" with described behaviour. Zero references in
+   `src/`, `vite.config.js` or `index.html`. Setting either does nothing.
+   Still true as of 2026-09-14.
+
+The near-loss of the cache-ceiling override during the upstream merge is a
+*different* failure (a correct implementation nearly deleted) and is not
+counted here.
+
+**The habit this asks for:** when a comment says a guard defends against a
+specific named hazard, write the test that feeds it that exact hazard — not a
+test that the function returns something sensible. All three above would have
+been caught at write time by one assertion each. A defensive comment is a
+claim, and an unasserted claim is how these survive.
 
 ## Closed / Intentional (for clarity)
 
