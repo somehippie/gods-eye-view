@@ -14,6 +14,7 @@ import radioLayer from './data/radio.js';
 import bikeshareLayer from './data/bikeshare.js';
 import transitVehiclesLayer from './data/transitVehicles.js';
 import bartDeparturesLayer from './data/bartDepartures.js';
+import amtrakTrainsLayer from './data/amtrakTrains.js';
 import aisLiveVesselsLayer from './data/aisLiveVessels.js';
 import militaryInstallationsLayer from './data/militaryInstallations.js';
 import militaryAwarenessLayer from './data/militaryAwareness.js';
@@ -239,6 +240,7 @@ async function init() {
     dataManager.register(bikeshareLayer);
     dataManager.register(transitVehiclesLayer);
     dataManager.register(bartDeparturesLayer);
+    dataManager.register(amtrakTrainsLayer);
     dataManager.register(aisLiveVesselsLayer);
     dataManager.register(militaryInstallationsLayer);
     dataManager.register(militaryAwarenessLayer);
