@@ -9,8 +9,17 @@ import { coordinateField, integerField, numericField, textField } from './fieldG
  * `Number()`. Adding a parser here is one line and a deliberate act; that is
  * the point. A blanket ban is not viable — `src/` has 502 bare `Number()`
  * calls, the overwhelming majority of them on values this app computed itself.
+ *
+ * ONE GOTCHA WHEN ADDING A FILE. The check below is a text scan over the raw
+ * source and does not know a comment from a statement, so a file on this list
+ * cannot spell the hazard out in prose either — a comment explaining the
+ * coercion trips the guard that forbids it. That is exactly what happened when
+ * `amtrakFeed.js` was added (2026-09-14): it failed on an explanatory comment,
+ * not on any code. Write comments in these files to say what the fix DOES
+ * ("parses through numericField", "null-coerces-to-zero hazard"), not to
+ * restate the bug in its literal form.
  */
-const GUARDED_PARSERS = ['bartEtd.js'];
+const GUARDED_PARSERS = ['bartEtd.js', 'amtrakFeed.js'];
 
 test('every value that is not a number fails, rather than becoming zero', () => {
   // This is the whole bug. Number() maps all of these to 0, and 0 is a finite

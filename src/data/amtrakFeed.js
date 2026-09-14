@@ -58,8 +58,12 @@ export const RENDERED_STATES = Object.freeze(['Active']);
 // Field parsing lives in fieldGuards.js, not here. The local `text` and
 // `finite` helpers this file used to carry were behaviourally identical to
 // textField and numericField, and predated the shared module — the same
-// Number(null) === 0 hazard they were written against is exactly what that
+// null-coerces-to-zero hazard they were written against is exactly what that
 // module exists to stop being re-solved per file.
+//
+// This file is in GUARDED_PARSERS, so the suite fails if a bare numeric
+// coercion reappears here. That check is a text scan and does not know comments
+// from code, so prose in this file must not spell the coercion out either.
 
 /**
  * Parse the feed's timestamp into epoch milliseconds.
