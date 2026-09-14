@@ -10,6 +10,97 @@ wrong, the correction is left in place rather than edited out.
 
 ---
 
+## 2026-09-14 — Amtrak unparked: two research errors, corrected by the maintainer
+
+The layer was parked on 2026-09-10 pending permission. Piero Maddaleni
+(piemadd.com), who runs the Amtraker mirror, replied. Permission is granted —
+but the more useful part of his reply is that he corrected two things we had
+got wrong on our own, and both are worth recording as mistakes rather than as
+a resolved to-do.
+
+**Error 1: llms.txt was never a restriction, and was never the governing
+document.** The layer was parked because `amtraker.com/llms.txt` was read as
+prohibiting exactly this use case — "train location on a map, all trains" with
+a direction to send users to Amtraker.com instead. That reading was wrong.
+llms.txt is instructions for an AI chatbot serving live data conversationally
+to its own end user. It does not address applications, and it does not address
+an LLM writing one. We treated a file aimed at a different consumer as a
+licence term, and parked a working layer for four days on the strength of it.
+
+The actual governing document is **api.amtraker.com/docs**, which 302-redirects
+to github.com/piemadd/amtrak. Reading it properly changes the picture in both
+directions:
+
+- The data is **ODC-By 1.0**. There is a real attribution obligation, with a
+  stated placement (bottom right for an interactive map) and an explicit
+  prohibition on hiding it in settings or an FAQ. The parked branch's only
+  attribution was a `registerDataCredits` entry — which renders inside the
+  collapsed popover, i.e. hidden. We were non-compliant on the requirement we
+  did have while being over-cautious about a restriction that did not exist.
+- A **User-Agent is mandatory**: a request without one is blocked outright.
+- There is **no documented rate guidance at all**. The 300 s cadence is our own
+  courtesy, not compliance with a published number.
+
+The lesson is narrow and worth keeping: we inferred a prohibition from a
+document we had not established was authoritative, and did not go looking for
+the one that was. `/docs` was one request away the entire time.
+
+**Error 2: the User-Agent identified the wrong project and pointed at a
+stranger.** Piero flagged that the request announced "God's Eye View" when it
+should identify this specific integration, and suggested a
+`<name>/<version> (+contact)` shape. The value was
+`GodsEyeView/0.1 (+https://github.com/bilawalsidhu/gods-eye-view)`, and the
+code comment recorded how it got there: "matching the Nominatim proxy". It was
+copied from the whole-app convention instead of the per-integration convention
+that five sibling proxies in the same file already use.
+
+The naming was the smaller half. The contact URL pointed at the **upstream
+repository this project is derived from** — so an operator following it to
+complain about traffic would have reached someone with no connection to the
+integration generating it. The entire purpose of that header is reachability,
+and it was unreachable. Now
+`gods-eye-view-amtrak-proxy/0.1 (+https://github.com/somehippie/gods-eye-view)`, a
+plus-alias so it stays filterable and the primary address does not live in a
+third party's logs indefinitely. A boundary test asserts all four properties,
+because a normalizer test cannot see a header.
+
+**What the merge itself turned up.** Four days of `delta-water-layers` had
+landed underneath the parked branch, and the merge was not the clean drop-in it
+looked like. Recorded because three of the four fail silently:
+
+1. `vite.config.js` was not an adjacency conflict at all. `bartDeparturesProxy`
+   and `amtrakTrainsProxy` are separate functions with near-identical shapes
+   occupying the same region, and git matched them against each other and
+   produced ten hunks that read as edits to one function. Resolving those by
+   keeping both sides would have produced a single mangled proxy.
+2. `dataCredits.js` lost BART's attribution entirely. The conflict boundary
+   fell *inside* one object literal rather than between two, so keeping both
+   sides produced one object with duplicate keys — last wins, BART's required
+   Developer License Agreement notice gone, file still parsing, diff reading
+   clean. Caught only by asserting the entry count. A merge-hazard note now
+   sits at the top of that file.
+3. `layerState.js` had a share-link token collision: Amtrak took `k` while
+   parked, `bart-departures` took `k` afterwards. Reassigned to `p`.
+4. The registry guard test asserts canonical sort order as well as an exact
+   count; `amtrak-trains` was initially misplaced and the count assertion
+   failed first, masking it.
+
+**Two documentation claims were false and are corrected here rather than
+quietly.** The proxy's doc comment said "the non-running rows are dropped
+before anything crosses the wire" — they are not; `runningTrains` runs
+client-side, so Predeparture and Completed rows do cross the wire and are
+dropped at render. Not a rendering bug, but the wire contract is now pinned by
+a test. And both the comment and `DATA_SOURCES.md` still said 180 s after the
+constant had been changed to 300 s.
+
+**Cadence.** `AMTRAK_POLL_MS` is 300 s and was already 300 s; only the prose
+lagged. Since the docs publish no rate guidance, the number is ours: at 300 s a
+train at 79 mph moves ~6.6 miles between polls, against a feed whose own fix
+age is p50 2.7 min. Twelve requests an hour to a volunteer-run endpoint with no
+quota and no rate-limit header.
+
+---
+
 ## 2026-09-10 — Amtrak layer built, then parked pending permission
 
 **Status: not shipped. Nothing Amtrak-related is registered or running.** The

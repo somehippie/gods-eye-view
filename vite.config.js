@@ -2324,9 +2324,17 @@ const AMTRAK_USER_AGENT = 'gods-eye-view-amtrak-proxy/0.1 (+https://github.com/s
 /**
  * Vite plugin: live Amtrak train positions, nationwide.
  *
- * ONE UPSTREAM CALL PER REFRESH, every 180 s — see AMTRAK_POLL_MS for the
- * measurement behind that number. The response is normalized server-side and
- * the non-running rows are dropped before anything crosses the wire.
+ * ONE UPSTREAM CALL PER REFRESH, every 300 s — see AMTRAK_POLL_MS for the
+ * measurement behind that number.
+ *
+ * WHAT CROSSES THE WIRE, corrected. This comment used to claim the non-running
+ * rows were "dropped before anything crosses the wire". They are not. The
+ * response is normalized server-side and nothing else: `runningTrains` is
+ * applied CLIENT-side in amtrakTrains.js, so Predeparture and Completed rows do
+ * reach the browser and are dropped at render. Not a rendering fault, but the
+ * claim was wrong about the contract, and payload size and "do un-observed
+ * positions leave the server" both depend on it. Pinned now by
+ * amtrakProxy.test.mjs rather than by this comment.
  *
  * WHY NOT AMTRAK DIRECTLY. Amtrak's own MapDataService answers 200 with ~492 KB
  * of base64 AES ciphertext (measured 2026-09-10; `getTrainsRealtime` is now a
