@@ -2347,10 +2347,17 @@ const AMTRAK_USER_AGENT = 'gods-eye-view-amtrak-proxy/0.1 (+https://github.com/s
  *
  * @returns {import('vite').Plugin}
  */
-function amtrakTrainsProxy() {
+export function amtrakTrainsProxy({ cacheDir } = {}) {
   const TTL_MS = AMTRAK_POLL_MS;
   const MAX_RESPONSE_BYTES = 8 * 1024 * 1024;
-  const CACHE_PATH = path.join(process.cwd(), '.gev-cache', 'amtrak-trains.json');
+  // Injectable so a boundary test gets its own cache directory. Without it the
+  // disk cache is process-global state that survives between plugin instances,
+  // and the tests silently become order-dependent — a later test mounts a fresh
+  // proxy, reads the frame an earlier one wrote, and makes no upstream call at
+  // all, so an assertion about what was requested passes or fails depending on
+  // what ran before it. Same lesson as bartDeparturesProxy.
+  const CACHE_DIR = cacheDir || path.join(process.cwd(), '.gev-cache');
+  const CACHE_PATH = path.join(CACHE_DIR, 'amtrak-trains.json');
   const UPSTREAM = 'https://api-v3.amtraker.com/v3/trains';
 
   /** @type {?{at: number, trains: Array<object>}} */

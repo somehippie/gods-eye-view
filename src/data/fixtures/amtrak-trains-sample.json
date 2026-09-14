@@ -1,0 +1,78 @@
+{
+  "1": [
+    {
+      "trainID": "1-9",
+      "trainNum": "1",
+      "routeName": "Sunset Limited",
+      "lat": 29.413544907950257,
+      "lon": -98.47775282440864,
+      "heading": "S",
+      "velocity": 9.811448097229,
+      "trainState": "Active",
+      "trainTimely": "On Time",
+      "origCode": "NOL",
+      "origName": "New Orleans, LA",
+      "destCode": "LAX",
+      "destName": "Los Angeles, CA",
+      "iconColor": "#2a893d",
+      "updatedAt": "2026-09-10T07:57:00Z"
+    }
+  ],
+  "6": [
+    {
+      "trainID": "6-10",
+      "trainNum": "6",
+      "routeName": "California Zephyr",
+      "lat": 40.75404,
+      "lon": -111.8951,
+      "heading": "E",
+      "velocity": 61.2,
+      "trainState": "Active",
+      "trainTimely": "12 minutes late",
+      "origCode": "EMY",
+      "origName": "Emeryville, CA",
+      "destCode": "CHI",
+      "destName": "Chicago, IL",
+      "iconColor": "#0a6ba8",
+      "updatedAt": "2026-09-10T07:58:30Z"
+    }
+  ],
+  "448": [
+    {
+      "trainID": "448-9",
+      "trainNum": "448",
+      "routeName": "Lake Shore Limited",
+      "lat": 42.3601,
+      "lon": -71.0589,
+      "heading": "W",
+      "velocity": 0,
+      "trainState": "Predeparture",
+      "trainTimely": "On Time",
+      "origCode": "BOS",
+      "origName": "Boston, MA",
+      "destCode": "CHI",
+      "destName": "Chicago, IL",
+      "iconColor": "#7b3f9e",
+      "updatedAt": null
+    }
+  ],
+  "97": [
+    {
+      "trainID": "97-8",
+      "trainNum": "97",
+      "routeName": "Silver Meteor",
+      "lat": 28.5383,
+      "lon": -81.3792,
+      "heading": "S",
+      "velocity": 44.0,
+      "trainState": "Completed",
+      "trainTimely": "On Time",
+      "origCode": "NYP",
+      "origName": "New York, NY",
+      "destCode": "MIA",
+      "destName": "Miami, FL",
+      "iconColor": "#c2452d",
+      "updatedAt": "2026-09-10T07:50:00Z"
+    }
+  ]
+}
