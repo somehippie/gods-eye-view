@@ -1820,17 +1820,20 @@ const TRANSIT_BACKOFF_MAX_MS = 15 * 60_000;
 /**
  * Identifies THIS integration to 511, not the host application.
  *
- * 511 does not reject an anonymous request — the layer was built and measured
- * without this header, which is exactly why it was missing. It is here for the
- * same reason the Amtrak one is: an operator looking at their logs and
- * wondering who is polling them should be able to reach the person doing it.
+ * NO CONTACT ADDRESS, DELIBERATELY. This carried one briefly, copied from the
+ * AMTRAK_USER_AGENT pattern — but that pattern exists because Amtraker's docs
+ * state outright that a request without a User-Agent is blocked, and because
+ * its maintainer asked for a way to reach whoever was polling them. Neither
+ * applies here, and it was checked rather than assumed: 511's open-data page
+ * and its Terms of Use do not mention a User-Agent at all, and roughly 340
+ * requests were served during the rate-limit measurement without one (the 429s
+ * that ended it were quota, not identification).
  *
- * Follows the corrected sibling format (see AMTRAK_USER_AGENT) rather than the
- * Nominatim one: the service-specific name, and a contact that reaches this
- * project's maintainer instead of the upstream repository this is derived
- * from. The plus-alias keeps it filterable and per-service.
+ * So the header stays, because naming the caller is good manners and costs
+ * nothing, but a personal address published to satisfy a requirement that does
+ * not exist is exposure with no purchaser. If 511 ever asks, add one then.
  */
-const TRANSIT_USER_AGENT = 'gods-eye-view-transit-proxy/0.1 (+https://github.com/somehippie/gods-eye-view)';
+const TRANSIT_USER_AGENT = 'gods-eye-view-transit-proxy/0.1';
 
 // --- BART station departures -----------------------------------------------
 

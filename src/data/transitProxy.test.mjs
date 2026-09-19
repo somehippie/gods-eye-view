@@ -157,9 +157,11 @@ test('the upstream request asks for the combined feed, not one agency', async ()
 
 test('every upstream request identifies this integration — the check that was missing', async () => {
   // THIS is the assertion that would have failed before this file existed: the
-  // proxy sent no User-Agent at all, so 511 had no way to reach whoever was
-  // polling them. It names the integration, not the host app, and carries a
-  // contact that is not the upstream repository this project derives from.
+  // proxy sent no User-Agent at all. It names the integration rather than the
+  // host app, and carries NO contact address — 511 requires no identification
+  // (checked: nothing in their terms or open-data page, and ~340 anonymous
+  // requests were served during the rate-limit measurement), so publishing a
+  // personal address here would buy nothing.
   await withToken('test-token', async () => {
     const routes = mountProxy();
     const stub = stubFetch(serveFeed);
@@ -168,8 +170,11 @@ test('every upstream request identifies this integration — the check that was 
       assert.ok(stub.calls.length > 0);
       for (const call of stub.calls) {
         const agent = call.headers['User-Agent'] ?? '';
-        assert.match(agent, /^gods-eye-view-transit-proxy\/[\d.]+ \(\+.+\)$/);
-        assert.doesNotMatch(agent, /github\.com/, 'the contact must be reachable, not the upstream repo');
+        assert.match(agent, /^gods-eye-view-transit-proxy\/[\d.]+$/);
+        // Two things that must never creep back in: the upstream repo URL this
+        // project is derived from, and a personal address 511 never asked for.
+        assert.doesNotMatch(agent, /github\.com/);
+        assert.doesNotMatch(agent, /@/, 'no contact address unless 511 asks for one');
       }
     } finally { stub.restore(); }
   });
