@@ -7,12 +7,12 @@ of current runtime behavior, see [`docs/CURRENT-STATE.md`](docs/CURRENT-STATE.md
 
 ### Added
 
-- Added a live **Rail & Ferry** layer: Bay Area train and ferry positions from
-  511.org, covering Caltrain, Capitol Corridor, ACE, SMART and the SF Bay Ferry
-  (~41 vehicles at rush hour). Requires a free `FIVEONEONE_TOKEN`; without one
-  the layer reports `KEY REQUIRED` and never contacts upstream. Buses are
-  filtered server-side — the regional feed carries ~2,000 vehicles and all but
-  ~40 of them are buses.
+- Added a live **Rail** layer: Bay Area passenger-train positions from 511.org,
+  covering Caltrain, Capitol Corridor, ACE and SMART (~30 trains at rush hour).
+  Requires a free `FIVEONEONE_TOKEN`; without one the layer reports
+  `KEY REQUIRED` and never contacts upstream. Buses and ferries are filtered
+  server-side — the regional feed carries ~2,000 vehicles and all but ~30 of
+  them are buses, and every Bay Area ferry already appears in the AIS layer.
 - Added GTFS-Realtime decoding with no new dependency, covering both the
   complete feed shape and the sparse one (Caltrain publishes no bearing, speed
   or status, which now reads as absent rather than as zero).

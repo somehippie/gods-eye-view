@@ -4,10 +4,10 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
-  RAIL_FERRY_AGENCIES,
+  RAIL_AGENCIES,
   agencyOf,
   decodeVehiclePositions,
-  railAndFerryOnly,
+  railOnly,
   readMessage,
 } from './gtfsRealtime.js';
 
@@ -164,22 +164,35 @@ test('optional telemetry is absent rather than zero when the operator omits it',
   assert.equal(v.stopId, null);
 });
 
-test('rail and ferry filtering drops the buses and names what it keeps', () => {
+test('rail filtering drops the buses and names what it keeps', () => {
   const vehicles = [
     { agency: 'CT', vehicleId: '144' }, { agency: 'AC', vehicleId: '6111' },
-    { agency: 'SB', vehicleId: 'Carina' }, { agency: 'SF', vehicleId: '1' },
+    { agency: 'AM', vehicleId: '2102' }, { agency: 'SF', vehicleId: '1' },
     { agency: null, vehicleId: 'x' },
   ];
-  const kept = railAndFerryOnly(vehicles);
-  assert.deepEqual(kept.map((v) => [v.agency, v.agencyName, v.mode]), [
-    ['CT', 'Caltrain', 'rail'],
-    ['SB', 'SF Bay Ferry', 'ferry'],
+  const kept = railOnly(vehicles);
+  assert.deepEqual(kept.map((v) => [v.agency, v.agencyName]), [
+    ['CT', 'Caltrain'],
+    ['AM', 'Capitol Corridor'],
   ]);
 });
 
+test('ferries are dropped, because AIS already draws every one of those boats', () => {
+  // SF Bay Ferry's 15 vehicle ids are the boats' names, and all of them also
+  // broadcast AIS. Carrying them here drew each boat twice, since nothing
+  // dedupes between this layer and the AIS one.
+  const ferries = [
+    { agency: 'SB', vehicleId: 'Carina' },
+    { agency: 'GF', vehicleId: 'x' },
+    { agency: 'TF', vehicleId: 'y' },
+  ];
+  assert.deepEqual(railOnly(ferries), []);
+  for (const id of ['SB', 'GF', 'TF']) assert.equal(RAIL_AGENCIES[id], undefined);
+});
+
 test('BART is deliberately not in the rail cohort, because it has no positions', () => {
-  assert.equal(RAIL_FERRY_AGENCIES.BA, undefined);
-  assert.deepEqual(railAndFerryOnly([{ agency: 'BA', vehicleId: 'x' }]), []);
+  assert.equal(RAIL_AGENCIES.BA, undefined);
+  assert.deepEqual(railOnly([{ agency: 'BA', vehicleId: 'x' }]), []);
 });
 
 test('a truncated payload is rejected instead of yielding invented fields', () => {
@@ -239,5 +252,5 @@ test('a real Capitol Corridor capture carries the telemetry Caltrain omits', () 
   assert.equal(sample.status, 'INCOMING_AT');
   assert.ok(Number.isFinite(sample.speed));
   assert.equal(sample.stopId, '74422');
-  assert.deepEqual(railAndFerryOnly(vehicles).map((v) => v.agencyName)[0], 'Capitol Corridor');
+  assert.deepEqual(railOnly(vehicles).map((v) => v.agencyName)[0], 'Capitol Corridor');
 });

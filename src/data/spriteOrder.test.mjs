@@ -12,7 +12,12 @@ import flightsLayer from './flights.js';
 import aisLiveVesselsLayer from './aisLiveVessels.js';
 import { createFirmsHeatmapLayer } from './firmsHeatmap.js';
 
-const ORDER = ['cctv', 'firms', 'bikeshare', 'ais', 'military', 'flights'];
+// Derived, not copied. This used to be a hand-written duplicate of
+// SPRITE_LAYER_ORDER, and because it only SEEDS the fixtures, a layer added to
+// the real list but not to this one would have been silently left out of every
+// case below — the test would keep passing while covering less. The expected
+// sequences in each assertion stay hard-coded: those are the actual pin.
+const ORDER = SPRITE_LAYER_ORDER;
 
 function makePrimitives(initial = []) {
   return {
@@ -44,13 +49,16 @@ test('restoreSpriteOrder raises live collections bottom-to-top and skips destroy
     collections.cctv,
     collections.bikeshare,
     collections.military,
+    collections['transit-vehicles'],
   ]);
 
   restoreSpriteOrder({ scene: { primitives } });
 
-  assert.deepEqual(primitives.calls, ['cctv', 'bikeshare', 'ais', 'military', 'flights']);
+  assert.deepEqual(primitives.calls, [
+    'cctv', 'bikeshare', 'ais', 'transit-vehicles', 'military', 'flights',
+  ]);
   assert.deepEqual(primitives.items.map((item) => item.id), [
-    'cctv', 'bikeshare', 'ais', 'military', 'flights',
+    'cctv', 'bikeshare', 'ais', 'transit-vehicles', 'military', 'flights',
   ]);
 
   for (const id of ORDER) unregisterSpriteCollection(id);
@@ -180,4 +188,39 @@ test('a listed id stays silent and still reorders', () => {
   });
   assert.deepEqual(warnings, []);
   assert.equal(restored, SPRITE_LAYER_ORDER.length);
+});
+
+test('every registerSpriteCollection call site in src/ names a listed layer', async () => {
+  // The all-at-once check. The per-call warning above only fires when the code
+  // actually runs; this fails in CI the moment a new layer registers under an
+  // id SPRITE_LAYER_ORDER does not know, which is how transit-vehicles managed
+  // to call a dead ordering path from the day it was written.
+  const { readdirSync, readFileSync, statSync } = await import('node:fs');
+  const { join, dirname } = await import('node:path');
+  const { fileURLToPath } = await import('node:url');
+
+  const srcRoot = join(dirname(fileURLToPath(import.meta.url)), '..');
+  const files = [];
+  (function walk(dir) {
+    for (const entry of readdirSync(dir)) {
+      const full = join(dir, entry);
+      if (statSync(full).isDirectory()) { walk(full); continue; }
+      // Test files deliberately register bogus ids to prove the warning fires.
+      if (/\.test\.mjs$/.test(entry) || entry === 'spriteOrder.js') continue;
+      if (/\.(js|mjs)$/.test(entry)) files.push(full);
+    }
+  }(srcRoot));
+
+  const offenders = [];
+  let callSites = 0;
+  for (const file of files) {
+    const source = readFileSync(file, 'utf8');
+    for (const match of source.matchAll(/registerSpriteCollection\(\s*'([^']+)'/g)) {
+      callSites += 1;
+      if (!SPRITE_LAYER_ORDER.includes(match[1])) offenders.push(`${file}: '${match[1]}'`);
+    }
+  }
+
+  assert.ok(callSites >= 6, `expected to find the real call sites, saw ${callSites}`);
+  assert.deepEqual(offenders, [], `sprite ids not in SPRITE_LAYER_ORDER: ${offenders.join(', ')}`);
 });

@@ -6,7 +6,7 @@ import { formatSelectionForCopy } from '../copySelection.js';
 import { normalizeLayerLoading } from '../loadingFeedback.js';
 
 test('the layer reports through getStats, which is the name the manager calls', () => {
-  // getStatus() was silently never read on the rail/ferry layer and its count
+  // getStatus() was silently never read on the rail layer and its count
   // chip sat at "—" forever. Asserting the absence keeps the rename from
   // coming back by habit.
   assert.equal(typeof amtrakTrainsLayer.getStats, 'function');

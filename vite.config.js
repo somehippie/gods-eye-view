@@ -18,7 +18,7 @@
  *  13. Weather effects — camera-local Open-Meteo observations without news/geocoding overhead
  *  14. Rocket launches — recent Launch Library 2 mission metadata
  *  15. Radio Browser — public-domain station directory and click counting
- *  16. 511.org transit — live Bay Area rail and ferry vehicle positions
+ *  16. 511.org transit — live Bay Area passenger-rail vehicle positions
  *
  * Also exposes Cesium and Google 3D Tiles API keys to the
  * client via `import.meta.env.*` defines.
@@ -43,7 +43,7 @@ import {
   isOverBudget as isTomTomOverBudget,
 } from './src/data/tomtomTiles.js';
 import { filterTrailing24h, parseFirmsCsv } from './src/data/firmsCsv.js';
-import { decodeVehiclePositions, railAndFerryOnly } from './src/data/gtfsRealtime.js';
+import { decodeVehiclePositions, railOnly } from './src/data/gtfsRealtime.js';
 import {
   bartUrlFor,
   mergeStationDepartures,
@@ -1881,17 +1881,18 @@ const BART_PUBLIC_DEMO_KEY = 'MW9S-E7SL-26DU-VV8V';
 const BART_USER_AGENT = 'GodsEyeView/0.1 (+https://github.com/bilawalsidhu/gods-eye-view)';
 
 /**
- * Vite plugin: 511.org live rail and ferry positions for the Bay Area.
+ * Vite plugin: 511.org live passenger-rail positions for the Bay Area.
  *
  * ONE UPSTREAM CALL PER REFRESH. 511 publishes both per-agency feeds and a
- * combined `agency=RG` feed. The rail and ferry cohort spans seven operators,
- * so per-agency polling would cost seven calls per refresh against a quota that
+ * combined `agency=RG` feed. The rail cohort spans four operators, so
+ * per-agency polling would cost four calls per refresh against a quota that
  * measurably does throttle; RG costs one call and carries all of them, and the
  * agency prefix on route/trip ids is what separates them again afterwards.
  *
- * The response is decoded server-side and the ~2,000 buses are dropped before
- * anything crosses the wire, so the client receives ~43 vehicles of JSON
- * instead of 200 KB of protobuf it would have to filter itself.
+ * The response is decoded server-side and the ~2,000 buses and ferries are
+ * dropped before anything crosses the wire, so the client receives ~30 trains
+ * of JSON instead of 200 KB of protobuf it would have to filter itself.
+ * Ferries are excluded because they also broadcast AIS and would draw twice.
  *
  * THROTTLING IS REAL AND SILENT. 511 answers 429 with no `Retry-After` and no
  * reset header, and its `RateLimit-Remaining` header is per-backend-node — it
@@ -1975,7 +1976,7 @@ export function transitVehiclesProxy({ cacheDir } = {}) {
     const fresh = {
       at: Date.now(),
       feedTimestamp: decoded.timestamp,
-      vehicles: railAndFerryOnly(decoded.vehicles),
+      vehicles: railOnly(decoded.vehicles),
     };
     mem = fresh;
     void writeDisk(fresh);

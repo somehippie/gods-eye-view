@@ -1,12 +1,16 @@
 /**
  * @module transitVehicles
- * @description Live Bay Area rail and ferry positions from 511.org.
+ * @description Live Bay Area passenger-rail positions from 511.org.
  *
- * WHY RAIL AND FERRY AND NOT BUSES: the regional feed carries ~2,000 vehicles
- * at rush hour and ~1,960 of them are buses, which cover the Bay in a solid
- * mat of dots. The 40-odd trains and boats read the way the ADS-B and AIS
- * layers do — sparse, fast, going somewhere — which is the character this map
- * is for. The proxy filters before the wire, so the client never sees a bus.
+ * WHY RAIL AND NOT BUSES: the regional feed carries ~2,000 vehicles at rush
+ * hour and ~1,960 of them are buses, which cover the Bay in a solid mat of
+ * dots. The 30-odd trains read the way the ADS-B layer does — sparse, fast,
+ * going somewhere — which is the character this map is for. The proxy filters
+ * before the wire, so the client never sees a bus.
+ *
+ * WHY NOT FERRIES EITHER: SF Bay Ferry's 15 boats all broadcast AIS, and
+ * nothing dedupes between this layer and the AIS one, so carrying them drew
+ * every boat twice. AIS owns the water; this layer owns the rails.
  *
  * WHY BART IS NOT HERE: BART publishes no vehicle positions. Not on
  * api.bart.gov (`gtfsrt/vehiclepositions.aspx` is a 404; the trip-update feed
@@ -41,7 +45,6 @@ const ENDPOINT = '/api/transit/vehicles';
 const MAX_FIX_AGE_MS = 10 * 60_000;
 
 const RAIL_COLOR = Cesium.Color.fromCssColorString('#62b5ff');
-const FERRY_COLOR = Cesium.Color.fromCssColorString('#5fe0c0');
 const SELECTED_COLOR = Cesium.Color.fromCssColorString('#ffd479');
 
 let _viewer = null;
@@ -70,7 +73,7 @@ let _keyRequired = false;
  *
  * Route first, because "Caltrain 507" means less to a reader than the line it
  * is running. Falls back through the ids the operator did populate — Caltrain
- * sends a bare vehicle id and no label, SF Bay Ferry sends the boat's name.
+ * sends a bare vehicle id and no label, others send a fleet number.
  *
  * @param {object} record
  * @returns {string}
@@ -116,10 +119,7 @@ export function freshVehicles(vehicles, nowMs, maxAgeMs = MAX_FIX_AGE_MS) {
   return out;
 }
 
-const colorFor = (record, selected) => {
-  if (selected) return SELECTED_COLOR;
-  return record.mode === 'ferry' ? FERRY_COLOR : RAIL_COLOR;
-};
+const colorFor = (record, selected) => (selected ? SELECTED_COLOR : RAIL_COLOR);
 
 /**
  * Publish the selected vehicle into the shared context store.
@@ -137,7 +137,7 @@ function registerSelectedContext(record) {
     return registerEntityContext({ __transitId: record.id }, {
       id: `transit-${record.id}`,
       layerId: 'transit-vehicles',
-      layerName: 'Rail & Ferry',
+      layerName: 'Rail',
       source: '511.org',
       label: vehicleLabel(record),
       latitude: record.latitude,
@@ -147,7 +147,6 @@ function registerSelectedContext(record) {
         routeId: record.routeId,
         tripId: record.tripId,
         operator: record.agencyName,
-        mode: record.mode,
         status: record.status,
         speed: record.speed,
         bearing: record.bearing,
@@ -259,7 +258,7 @@ function render(vehicles) {
 
 const transitVehiclesLayer = {
   id: 'transit-vehicles',
-  name: 'Rail & Ferry',
+  name: 'Rail',
   icon: '🚆',
   source: '511.org',
   updateInterval: POLL_MS,
@@ -337,7 +336,7 @@ const transitVehiclesLayer = {
       loading: _loading,
       hasKey: _hasKey,
     };
-    if (_loading) stats.loadingLabel = 'reading rail and ferry feeds...';
+    if (_loading) stats.loadingLabel = 'reading rail feeds...';
     // keyRequired, not error: loadingFeedback renders KEY REQUIRED off this
     // field, while an error would show an unconfigured layer as failed.
     if (_keyRequired) stats.keyRequired = true;

@@ -191,7 +191,7 @@ export const DATA_CREDITS = [
   {
     key: 'transit-511',
     html:
-      'Bay Area rail and ferry positions: ' +
+      'Bay Area passenger-rail positions: ' +
       '<a href="https://511.org/open-data" target="_blank" rel="noopener">511 SF Bay Open Data</a> ' +
       '(MTC), via each operator’s GTFS-Realtime feed',
   },

@@ -28,24 +28,28 @@ const WIRE_FIXED32 = 5;
 const STOP_STATUS = Object.freeze(['INCOMING_AT', 'STOPPED_AT', 'IN_TRANSIT_TO']);
 
 /**
- * Agencies whose vehicles are trains or boats.
+ * Agencies whose vehicles are trains.
  *
- * 511 publishes 43 operators and ~2,000 vehicles at rush hour; all but ~43 of
+ * 511 publishes 43 operators and ~2,000 vehicles at rush hour; all but ~40 of
  * them are buses, which bury the map. These are the 511 operator ids for the
- * rail and ferry services, which is the cohort that reads like the ADS-B and
- * AIS layers this sits beside.
+ * rail services, which is the cohort that reads like the ADS-B layer this sits
+ * beside.
  *
- * BART is deliberately absent: it publishes no vehicle positions at all, on
- * 511 or on api.bart.gov.
+ * FERRIES ARE DELIBERATELY ABSENT. SF Bay Ferry (SB) publishes 15 boats and
+ * every one of them also broadcasts AIS, so carrying them here drew each boat
+ * twice — two independent icons stacked at one position, because nothing
+ * dedupes between this layer and the AIS one. AIS is the better maritime
+ * source and owns the water; rail is the part it cannot show. Golden Gate (GF)
+ * and Treasure Island (TF) publish no vehicles at all.
+ *
+ * BART is absent for a different reason: it publishes no vehicle positions at
+ * all, on 511 or on api.bart.gov.
  */
-export const RAIL_FERRY_AGENCIES = Object.freeze({
-  CT: { name: 'Caltrain', mode: 'rail' },
-  AM: { name: 'Capitol Corridor', mode: 'rail' },
-  CE: { name: 'ACE', mode: 'rail' },
-  SA: { name: 'SMART', mode: 'rail' },
-  SB: { name: 'SF Bay Ferry', mode: 'ferry' },
-  GF: { name: 'Golden Gate Ferry', mode: 'ferry' },
-  TF: { name: 'Treasure Island Ferry', mode: 'ferry' },
+export const RAIL_AGENCIES = Object.freeze({
+  CT: { name: 'Caltrain' },
+  AM: { name: 'Capitol Corridor' },
+  CE: { name: 'ACE' },
+  SA: { name: 'SMART' },
 });
 
 /**
@@ -220,16 +224,16 @@ export function decodeVehiclePositions(bytes, { fallbackAgency = null } = {}) {
 }
 
 /**
- * Keep only the trains and boats, tagged with a display name and mode.
+ * Keep only the trains, tagged with a display name.
  * @param {Array<object>} vehicles
  * @returns {Array<object>}
  */
-export function railAndFerryOnly(vehicles) {
+export function railOnly(vehicles) {
   const out = [];
   for (const vehicle of vehicles) {
-    const meta = RAIL_FERRY_AGENCIES[vehicle.agency];
+    const meta = RAIL_AGENCIES[vehicle.agency];
     if (!meta) continue;
-    out.push({ ...vehicle, agencyName: meta.name, mode: meta.mode });
+    out.push({ ...vehicle, agencyName: meta.name });
   }
   return out;
 }

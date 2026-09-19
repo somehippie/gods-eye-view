@@ -11,10 +11,9 @@ test('a vehicle is labelled by its line, not by its fleet number', () => {
     vehicleLabel({ agencyName: 'Caltrain', routeId: 'Local Weekday', vehicleId: '144' }),
     'Caltrain Local Weekday 144',
   );
-  // SF Bay Ferry names its boats; the name is the identity worth showing.
   assert.equal(
-    vehicleLabel({ agencyName: 'SF Bay Ferry', routeId: 'SEA', label: 'Carina', vehicleId: 'Carina' }),
-    'SF Bay Ferry SEA Carina',
+    vehicleLabel({ agencyName: 'Capitol Corridor', routeId: 'CC', label: '2102', vehicleId: '2102' }),
+    'Capitol Corridor CC 2102',
   );
 });
 

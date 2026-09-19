@@ -1,9 +1,17 @@
-/** Bottom-to-top order for near-plane-clamped contact sprite collections. */
+/**
+ * Bottom-to-top order for near-plane-clamped contact sprite collections.
+ *
+ * `transit-vehicles` sits above `ais` because a train carrying its line —
+ * "Capitol Corridor CC 2102" — is a more useful thing to read and click than a
+ * generic AIS contact. There is no longer any overlap to trade off: the transit
+ * layer is rail-only, so nothing in it shares water with a vessel.
+ */
 export const SPRITE_LAYER_ORDER = Object.freeze([
   'cctv',
   'firms',
   'bikeshare',
   'ais',
+  'transit-vehicles',
   'military',
   'flights',
 ]);

@@ -57,13 +57,13 @@ test('a train copies the trip that pins the run, not the label back to itself', 
   assert.equal(
     formatSelectionForCopy({
       label: 'Caltrain Local Weekday 144',
-      layerName: 'Rail & Ferry',
+      layerName: 'Rail',
       source: '511.org',
       latitude: 37.3736,
       longitude: -122.0149,
-      properties: { vehicleId: '144', tripId: '1234', operator: 'Caltrain', mode: 'rail' },
+      properties: { vehicleId: '144', tripId: '1234', operator: 'Caltrain' },
     }),
-    'Caltrain Local Weekday 144 · Trip 1234 · Rail & Ferry (511.org) · 37.37360, -122.01490',
+    'Caltrain Local Weekday 144 · Trip 1234 · Rail (511.org) · 37.37360, -122.01490',
   );
 });
 
@@ -73,13 +73,13 @@ test('a multi-word operator already in the label is not repeated after it', () =
   assert.equal(
     formatSelectionForCopy({
       label: 'Capitol Corridor CC 6965',
-      layerName: 'Rail & Ferry',
+      layerName: 'Rail',
       source: '511.org',
       latitude: 37.65254,
       longitude: -122.08412,
       properties: { vehicleId: '6965', tripId: '544', operator: 'Capitol Corridor' },
     }),
-    'Capitol Corridor CC 6965 · Trip 544 · Rail & Ferry (511.org) · 37.65254, -122.08412',
+    'Capitol Corridor CC 6965 · Trip 544 · Rail (511.org) · 37.65254, -122.08412',
   );
 });
 

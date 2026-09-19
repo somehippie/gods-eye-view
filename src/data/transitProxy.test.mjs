@@ -57,7 +57,7 @@ const vehicle = ({ id, routeId, vehicleId, lat, lon, ts }) => bytes(2, [
 ]);
 
 const FEED_TS = 1789002837;
-/** Two trains, one ferry, and two buses that the proxy must drop. */
+/** Two trains the proxy must keep, and a ferry and two buses it must drop. */
 const REGIONAL_FEED = Buffer.from([
   ...header(FEED_TS),
   ...vehicle({ id: '1', routeId: 'CT:Local Weekday', vehicleId: '144', lat: 37.3736, lon: -122.0149, ts: FEED_TS - 10 }),
@@ -189,7 +189,7 @@ test('the token reaches the query string and never the path', async () => {
   });
 });
 
-test('the served payload keeps rail and ferry and drops the buses', async () => {
+test('the served payload keeps rail and drops the buses and ferries', async () => {
   // The feed is ~2,000 vehicles at rush hour and all but ~40 are buses. The
   // filter runs server-side, so this asserts what actually crosses the wire.
   await withToken('test-token', async () => {
@@ -199,9 +199,11 @@ test('the served payload keeps rail and ferry and drops the buses', async () => 
       const res = await callProxy(routes);
       assert.equal(res.statusCode, 200);
       const body = JSON.parse(res.body);
-      assert.equal(body.count, 3, 'two trains and a ferry; the two buses are dropped');
-      assert.deepEqual(body.vehicles.map((v) => v.id), ['CT:144', 'AM:2102', 'SB:Carina']);
-      assert.deepEqual(body.vehicles.map((v) => v.mode), ['rail', 'rail', 'ferry']);
+      assert.equal(body.count, 2, 'two trains; the ferry and both buses are dropped');
+      assert.deepEqual(body.vehicles.map((v) => v.id), ['CT:144', 'AM:2102']);
+      // The ferry is dropped on purpose: AIS already draws that boat, and
+      // nothing dedupes between the two layers.
+      assert.ok(!body.vehicles.some((v) => v.id.startsWith('SB:')), 'no ferries');
       assert.equal(body.feedTimestamp, FEED_TS);
       assert.equal(body.stale, false);
     } finally { stub.restore(); }
@@ -272,7 +274,7 @@ test('a throttle after a good frame serves the last good frame, not an error', a
         assert.equal(res.headers['X-GEV-Cache'], 'STALE-THROTTLED');
         const body = JSON.parse(res.body);
         assert.equal(body.stale, true);
-        assert.equal(body.count, 3, 'the last good vehicles are still served');
+        assert.equal(body.count, 2, 'the last good vehicles are still served');
       } finally { Date.now = originalNow; }
     } finally { stub.restore(); }
   });

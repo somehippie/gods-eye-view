@@ -10,20 +10,6 @@ For the roadmap and open backlog, see the repository issue tracker.
 
 ## Open
 
-### 511 transit-vehicles proxy has no boundary coverage
-Status: Open (not blocked on anything)
-
-Carried out of the Amtrak prerequisites entry when that closed, because it was
-never an Amtrak item and would otherwise have been filed away with it.
-
-`transitVehiclesProxy` in `vite.config.js` is neither exported nor driven by a
-test, so the seam where it meets 511 is uncovered — the same gap that shipped a
-broken BART url past 21 green unit tests, and an unasserted User-Agent past 17
-on Amtrak. `bartProxy.test.mjs` and `amtrakProxy.test.mjs` are both worked
-examples now; the step is export the factory, add an injectable `cacheDir`, and
-assert what it requested as well as what it served.
-
-
 ### BART departure board cap of 8 has never engaged on real data
 Status: Open (unverified threshold)
 
@@ -57,33 +43,28 @@ How to verify (weekday, ~08:00 or ~17:30 PDT):
   collides with adjacent station dots at city zoom.
 
 
-### transit-vehicles registers a sprite collection that is never ordered
-Status: Open (cosmetic / dead code)
+### Two sources of truth for sprite layer order
+Status: Open (mitigated, not eliminated)
 
 Context:
-- `transitVehicles.js` calls `registerSpriteCollection('transit-vehicles', ...)`
-  in `init()` and `restoreSpriteOrder(...)` in `init()`/`enable()`.
-- `SPRITE_LAYER_ORDER` in `spriteOrder.js` lists only cctv, firms, bikeshare,
-  ais, military and flights. `transit-vehicles` is not among them.
-- `restoreSpriteOrder` iterates `SPRITE_LAYER_ORDER` and raises each registered
-  collection to the top, so a collection registered under an unlisted id is
-  stored in the map and never acted on. The call currently does nothing.
+- `SPRITE_LAYER_ORDER` in `spriteOrder.js` is the production list.
+- `spriteOrder.test.mjs` used to hand-copy it into a local `ORDER` constant. That
+  copy only SEEDED the fixtures, so a layer added to the real list but not to the
+  copy was silently left out of every case — the tests kept passing while
+  covering less. Exactly how `transit-vehicles` went unnoticed.
 
-Consequence:
-- No visible bug today. Rail/ferry points simply keep whatever draw order they
-  received when added to the scene, rather than a declared one.
-- The hazard is that it reads as if ordering were handled. A future layer
-  copying this pattern would inherit a silent no-op.
+Mitigated 2026-09-19:
+- `ORDER` is now `SPRITE_LAYER_ORDER` itself, so the fixture set can no longer
+  drift from production.
+- The expected sequences inside each assertion are still written out by hand,
+  which is deliberate — deriving those too would make the test compare the list
+  to itself and assert nothing. They are the real pin.
 
-Fix candidates (not yet chosen):
-- Add `transit-vehicles` to `SPRITE_LAYER_ORDER` at the intended depth, or
-- Drop the two calls from `transitVehicles.js` so the file stops implying an
-  ordering guarantee it does not have.
-
-Deliberately not fixed alongside the direction-text change: picking a draw
-order is a rendering decision that deserves its own change and its own look at
-how the layer sits against ais/flights.
-
+What is still open:
+- Adding a layer means editing the production list AND every hand-written
+  expected sequence. That is intended (the test should fail until someone states
+  the new order on purpose), but it is a lockstep edit and nothing names that
+  requirement at the call site beyond this entry and a comment in the test.
 
 ### Street traffic can be slow/uneven when panning across dense city blocks
 Status: Open (partially mitigated)
@@ -244,6 +225,53 @@ otherwise merge with a weaker seam than the layer that came after it:
    shipped a broken URL past 21 green unit tests precisely because that seam
    was untested; the Amtrak proxy has the identical untested seam today.
 
+
+### 511 transit-vehicles proxy boundary coverage (closed 2026-09-19)
+Resolved. `transitVehiclesProxy` is exported and takes an injectable `cacheDir`,
+and `transitProxy.test.mjs` drives the real handler with `fetch` stubbed —
+asserting both what it asked upstream for and what it served back. That was the
+last of the three data proxies without it.
+
+Writing it found the third instance of the gap it exists to catch: the proxy
+sent NO User-Agent at all, so 511 had no way to identify or reach whoever was
+polling them, and nothing would ever have said so. The assertion was
+mutation-checked — removing the header fails that test and only that test.
+
+---
+
+### transit-vehicles sprite registration (closed 2026-09-19)
+Resolved. `transit-vehicles` is now in `SPRITE_LAYER_ORDER`, placed above `ais`
+so a train carrying its line reads and clicks ahead of a generic AIS contact.
+There is no longer any overlap to trade off, because the layer became rail-only
+in the same change.
+
+The underlying class of bug — a registry silently accepting an id it will never
+act on — was fixed rather than just this instance:
+- `registerSpriteCollection` and `restoreSpriteOrderOnEnable` both warn once,
+  naming the id and both remedies, instead of quietly doing nothing.
+- A test scans every `registerSpriteCollection` call site in `src/` and fails if
+  any id is missing from `SPRITE_LAYER_ORDER`, so the next one is caught in CI
+  rather than by someone noticing a layer draws in the wrong order.
+
+Third instance of this shape in the project; the first two were a layer
+reporting stats under a name the manager never calls, and this same file's
+enable path.
+
+---
+
+### Ferries deliberately excluded from the rail layer (closed 2026-09-19)
+Not a defect. SF Bay Ferry publishes 15 boats and every one also broadcasts AIS,
+so carrying them in `transit-vehicles` drew each boat twice — two independent
+icons at one position, because nothing dedupes between the layers. Golden Gate
+and Treasure Island publish no vehicles at all.
+
+Options weighed: exact-name dedup is possible (511 uses the vessel NAME as the
+vehicle id, and GTFS-RT carries no MMSI, so name is the only key) but needs a
+cross-layer seam this codebase deliberately does not have, for 15 boats. Dropped
+ferries instead: AIS is the sole maritime source, rail is the part it cannot
+show, and no coupling was introduced.
+
+---
 
 ### Proxy SSRF and error-surface hardening gaps
 Status: Closed as fixed on `main`
