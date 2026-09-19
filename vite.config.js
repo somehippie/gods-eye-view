@@ -1817,6 +1817,21 @@ const TRANSIT_BACKOFF_MIN_MS = 60_000;
 /** Backoff ceiling, so a long throttle still recovers on its own. */
 const TRANSIT_BACKOFF_MAX_MS = 15 * 60_000;
 
+/**
+ * Identifies THIS integration to 511, not the host application.
+ *
+ * 511 does not reject an anonymous request — the layer was built and measured
+ * without this header, which is exactly why it was missing. It is here for the
+ * same reason the Amtrak one is: an operator looking at their logs and
+ * wondering who is polling them should be able to reach the person doing it.
+ *
+ * Follows the corrected sibling format (see AMTRAK_USER_AGENT) rather than the
+ * Nominatim one: the service-specific name, and a contact that reaches this
+ * project's maintainer instead of the upstream repository this is derived
+ * from. The plus-alias keeps it filterable and per-service.
+ */
+const TRANSIT_USER_AGENT = 'gods-eye-view-transit-proxy/0.1 (+https://github.com/somehippie/gods-eye-view)';
+
 // --- BART station departures -----------------------------------------------
 
 /**
@@ -1893,10 +1908,15 @@ const BART_USER_AGENT = 'GodsEyeView/0.1 (+https://github.com/bilawalsidhu/gods-
  *
  * @returns {import('vite').Plugin}
  */
-function transitVehiclesProxy() {
+export function transitVehiclesProxy({ cacheDir } = {}) {
   const TTL_MS = TRANSIT_POLL_MS;
   const MAX_RESPONSE_BYTES = 8 * 1024 * 1024;
-  const CACHE_PATH = path.join(process.cwd(), '.gev-cache', 'transit-vehicles.json');
+  // Injectable so a boundary test gets its own cache directory; see the same
+  // note on bartDeparturesProxy. A process-global disk cache makes these tests
+  // order-dependent, because a later mount reads the frame an earlier one
+  // wrote and then makes no upstream call at all.
+  const CACHE_DIR = cacheDir || path.join(process.cwd(), '.gev-cache');
+  const CACHE_PATH = path.join(CACHE_DIR, 'transit-vehicles.json');
 
   /** @type {?{at: number, feedTimestamp: ?number, vehicles: Array<object>}} */
   let mem = null;
@@ -1935,7 +1955,10 @@ function transitVehiclesProxy() {
     const url = new URL('https://api.511.org/transit/vehiclepositions');
     url.searchParams.set('agency', 'RG');
     url.searchParams.set('api_key', token());
-    const upstream = await fetch(url, { signal: AbortSignal.timeout(20000) });
+    const upstream = await fetch(url, {
+      signal: AbortSignal.timeout(20000),
+      headers: { 'User-Agent': TRANSIT_USER_AGENT },
+    });
     if (upstream.status === 429) {
       throttledUntil = Date.now() + backoffMs;
       backoffMs = Math.min(backoffMs * 2, TRANSIT_BACKOFF_MAX_MS);
