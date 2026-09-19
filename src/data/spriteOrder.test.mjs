@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  SPRITE_LAYER_ORDER,
+  _resetSpriteOrderWarnings,
   registerSpriteCollection,
   restoreSpriteOrder,
   restoreSpriteOrderOnEnable,
@@ -117,4 +119,65 @@ test('flights, AIS, and FIRMS enable paths are wired through the shared sprite r
     /registerSpriteCollection\('firms', _billboards\);\s*restoreSpriteOrder\(_viewer\);/,
     'lazy FIRMS registration must restore order immediately',
   );
+});
+
+// ---------------------------------------------------------------------------
+// An id this module cannot act on is a mistake, and must say so.
+//
+// Both entry points used to take an unlisted id and quietly do nothing. That
+// is the same silent-registry-miss shape that already cost this project a
+// count chip stuck at "—" for a layer reporting stats under a name the manager
+// never calls, and it hid a dead ordering call in transitVehicles.js.
+// ---------------------------------------------------------------------------
+
+/** Capture console.warn for the duration of one call. */
+function captureWarnings(run) {
+  const warnings = [];
+  const real = console.warn;
+  console.warn = (...args) => warnings.push(args.join(' '));
+  try { run(); } finally { console.warn = real; }
+  return warnings;
+}
+
+test('registering a collection under an unlisted id says so instead of no-opping', () => {
+  _resetSpriteOrderWarnings();
+  const collection = { id: 'ghost' };
+  const warnings = captureWarnings(() => registerSpriteCollection('not-a-sprite-layer', collection));
+  assert.equal(warnings.length, 1);
+  assert.match(warnings[0], /registerSpriteCollection\('not-a-sprite-layer'\) does nothing/);
+  // The message has to name the remedy, not just the symptom.
+  assert.match(warnings[0], /SPRITE_LAYER_ORDER/);
+  assert.match(warnings[0], /drop the call/);
+  unregisterSpriteCollection('not-a-sprite-layer', collection);
+});
+
+test('an unlisted enable path warns too — the third instance of the same miss', () => {
+  _resetSpriteOrderWarnings();
+  let restored = 0;
+  const warnings = captureWarnings(() => {
+    restoreSpriteOrderOnEnable('not-a-sprite-layer', {}, () => { restored += 1; });
+  });
+  assert.equal(restored, 0, 'an unlisted id must still not reorder anything');
+  assert.equal(warnings.length, 1);
+  assert.match(warnings[0], /restoreSpriteOrderOnEnable\('not-a-sprite-layer'\)/);
+});
+
+test('the warning fires once per site, so an enable loop cannot spam the console', () => {
+  _resetSpriteOrderWarnings();
+  const warnings = captureWarnings(() => {
+    for (let i = 0; i < 5; i += 1) restoreSpriteOrderOnEnable('not-a-sprite-layer', {}, () => {});
+  });
+  assert.equal(warnings.length, 1);
+});
+
+test('a listed id stays silent and still reorders', () => {
+  _resetSpriteOrderWarnings();
+  let restored = 0;
+  const warnings = captureWarnings(() => {
+    for (const layerId of SPRITE_LAYER_ORDER) {
+      restoreSpriteOrderOnEnable(layerId, {}, () => { restored += 1; });
+    }
+  });
+  assert.deepEqual(warnings, []);
+  assert.equal(restored, SPRITE_LAYER_ORDER.length);
 });

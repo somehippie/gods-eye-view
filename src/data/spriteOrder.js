@@ -11,6 +11,40 @@ export const SPRITE_LAYER_ORDER = Object.freeze([
 /** @type {Map<string, Object>} */
 const _collections = new Map();
 
+/** Ids already warned about, so an enable path cannot spam the console. */
+const _warned = new Set();
+
+/**
+ * Complain once about a sprite id this module cannot act on.
+ *
+ * Both entry points below used to accept an unlisted id and quietly do
+ * nothing, which reads at the call site as if ordering were handled. That has
+ * now cost this project three separate silent misses of the same shape — a
+ * layer reporting stats under a name the manager never calls, and these two.
+ * An unlisted id is a mistake every time: either the layer belongs in
+ * SPRITE_LAYER_ORDER, or it should not be calling these at all.
+ *
+ * @param {string} layerId
+ * @param {string} where Function name, so the message points at the call.
+ * @returns {void}
+ */
+function warnUnordered(layerId, where) {
+  const key = `${where}:${layerId}`;
+  if (_warned.has(key)) return;
+  _warned.add(key);
+  console.warn(
+    `[spriteOrder] ${where}('${layerId}') does nothing: '${layerId}' is not in `
+    + `SPRITE_LAYER_ORDER (${SPRITE_LAYER_ORDER.join(', ')}). Add it at the `
+    + 'intended depth, or drop the call so the layer stops implying an ordering '
+    + 'guarantee it does not have.',
+  );
+}
+
+/** Test seam: forget which ids have already been warned about. */
+export function _resetSpriteOrderWarnings() {
+  _warned.clear();
+}
+
 /**
  * Register the current primitive collection for a sprite layer.
  * @param {string} layerId - Stable sprite-order layer key.
@@ -19,6 +53,9 @@ const _collections = new Map();
  */
 export function registerSpriteCollection(layerId, collection) {
   if (!layerId || !collection) return;
+  // Still stored, so unregisterSpriteCollection stays symmetric — but said out
+  // loud, because restoreSpriteOrder will never touch it.
+  if (!SPRITE_LAYER_ORDER.includes(layerId)) warnUnordered(layerId, 'registerSpriteCollection');
   _collections.set(layerId, collection);
 }
 
@@ -68,6 +105,10 @@ export function restoreSpriteOrderOnEnable(
   viewer,
   restore = restoreSpriteOrder,
 ) {
-  if (!SPRITE_LAYER_ORDER.includes(layerId) || typeof restore !== 'function') return;
+  if (!SPRITE_LAYER_ORDER.includes(layerId)) {
+    warnUnordered(layerId, 'restoreSpriteOrderOnEnable');
+    return;
+  }
+  if (typeof restore !== 'function') return;
   restore(viewer);
 }
