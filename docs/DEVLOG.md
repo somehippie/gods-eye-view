@@ -59,9 +59,11 @@ repository this project is derived from** — so an operator following it to
 complain about traffic would have reached someone with no connection to the
 integration generating it. The entire purpose of that header is reachability,
 and it was unreachable. Now
-`gods-eye-view-amtrak-proxy/0.1 (+https://github.com/somehippie/gods-eye-view)`, a
-plus-alias so it stays filterable and the primary address does not live in a
-third party's logs indefinitely. A boundary test asserts all four properties,
+`gods-eye-view-amtrak-proxy/0.1 (+https://github.com/somehippie/gods-eye-view)`:
+this project's own repository. It briefly carried a personal email address
+instead, which put that address in a public repository and in a third party's
+logs; a repository URL is reachable as long as Issues stay enabled on it.
+A boundary test asserts all four properties,
 because a normalizer test cannot see a header.
 
 **What the merge itself turned up.** Four days of `delta-water-layers` had

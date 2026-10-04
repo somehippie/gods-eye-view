@@ -2342,9 +2342,11 @@ const AMTRAK_BACKOFF_MAX_MS = 30 * 60_000;
  * point of the header is reachability, and it was unreachable.
  *
  * Format follows the five sibling proxies in this file
- * (gods-eye-view-<service>-proxy/<version>) with a contact address appended, as
- * the maintainer asked. The address is a plus-alias so it stays filterable and
- * the operator's primary address is not the one in a third party's logs.
+ * (gods-eye-view-<service>-proxy/<version>) with a contact appended, as the
+ * maintainer asked. The contact is this project's own repository, not the
+ * upstream one and not a personal email address: the header lands in a third
+ * party's logs, and this repository is public. A repository URL is only a
+ * contact if someone can open an issue there, so Issues must stay enabled on it.
  */
 const AMTRAK_USER_AGENT = 'gods-eye-view-amtrak-proxy/0.1 (+https://github.com/somehippie/gods-eye-view)';
 
